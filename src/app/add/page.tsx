@@ -38,9 +38,13 @@ export default function AddStockPage() {
   const total = totalPaid || sheetCost;
   const canSave = supplier.trim() && good.length > 0 && total > 0;
 
-  const save = () => {
-    const batch = addBatch({ supplier: supplier.trim(), supplierType, totalCost: total }, good, location);
-    toast.success(`Batch ${batch.code} added — ${good.length} machines`, {
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    const res = await addBatch({ supplier: supplier.trim(), supplierType, totalCost: total, location, items: good });
+    setSaving(false);
+    if (!res.ok) return toast.error(res.error);
+    toast.success(`Batch ${res.batchCode} added — ${good.length} machines`, {
       description: "They are waiting in Check & grade.",
     });
     router.push("/check");
@@ -146,8 +150,8 @@ export default function AddStockPage() {
               <SumRow label="Per machine" value={total && good.length ? rupees(total / good.length) : "—"} />
               <SumRow label="Goes to" value={location} />
             </dl>
-            <Button size="lg" className="mt-5 w-full" disabled={!canSave} onClick={save}>
-              <Plus /> Add {good.length ? count(good.length) : ""} machines to stock
+            <Button size="lg" className="mt-5 w-full" disabled={!canSave || saving} onClick={save}>
+              <Plus /> {saving ? "Saving…" : `Add ${good.length ? count(good.length) : ""} machines to stock`}
             </Button>
             {!canSave && (
               <p className="mt-2 text-center text-[12.5px] text-ink-3">

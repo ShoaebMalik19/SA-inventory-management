@@ -1,43 +1,92 @@
-# S.A Computers — Stock prototype
+# S.A Computers — Stock system (v1)
 
-A working prototype of a stock system for **S.A Computers, RT Nagar, Bengaluru**:
-used laptops and desktops, bulk orders for buyers like Cashify, and walk-in shop sales.
+Stock, checking, big orders, shop sales and returns for **S.A Computers, RT Nagar, Bengaluru**.
+Used laptops and desktops, tracked one serial number at a time.
 
-## Run it
+## Run it on your laptop (no setup)
 
 ```bash
 npm install
-npm run dev        # open http://localhost:3000
+npm run dev          # open http://localhost:3000
 ```
 
-Deploy: push this folder to GitHub and import it on vercel.com (no settings needed).
+The first start creates its own database in `./.data` (a real Postgres engine, embedded) and fills it
+with ~1,300 sample machines. Log in with a sample PIN:
+
+| Who | Role | PIN | Lands on |
+| --- | --- | --- | --- |
+| Shop owner | Owner — everything, staff, settings | 1111 | Home |
+| Manager | Everything except staff & settings | 2222 | Home |
+| Ravi (technician) | Add stock, check & grade, move, labels | 3333 | Check & grade |
+| Salma (counter) | Shop sales, returns, look up stock | 4444 | Shop sale |
+
+The owner changes names and PINs on **Staff**, and can **Reset sample data** from the sidebar.
+To start completely fresh, stop the app and delete the `.data` folder.
+
+## Go live (Supabase + Vercel, about 10 minutes, free tiers)
+
+1. **Database** — create a project on supabase.com (region: Mumbai `ap-south-1`).
+   Open **Connect → Transaction pooler** and copy the URI (port `6543`). Put the database password in it.
+2. **Code** — push this folder to a GitHub repository.
+3. **Hosting** — on vercel.com: *Add New → Project →* import the repo. Under *Environment Variables* add
+   `DATABASE_URL` = the Supabase URI, and `SESSION_SECRET` = any long random text. Deploy.
+4. Open the Vercel link. The first visit creates the tables and the sample data (takes a few seconds).
+   Log in as the owner and change all PINs before real staff use it.
+
+You can also create the tables by hand with `supabase/schema.sql` in the Supabase SQL editor.
+Row-level security is switched on for every table, so Supabase's public API can't read anything;
+only this app's server talks to the database.
 
 ## What's inside
 
 | Screen | What it does |
 | --- | --- |
-| Home | Machines ready to sell, where all stock is, money in the last 30 days, what needs attention |
-| All machines | Every machine by serial — search, filter, scan, download to Excel, full history per machine |
+| Home | Machines ready to sell, where all stock is, money in the last 30 days, what needs attention, who did what |
+| All machines | Every machine by serial — search, filter, camera scan, Excel download, tick many to move or label |
 | Ready stock | Ready machines by spec × grade, plus "A buyer is asking — can you fill it?" |
-| Check & grade | Test → battery → upgrade → grade → wipe. Opens the next machine automatically |
-| Add stock | New purchase batch from an Excel sheet (any column order) or by scanning serials |
-| Big orders | Auto-picks the right machines (closest spec, oldest stock first), books them, Excel serial list, dispatch |
+| Check & grade | Test → battery → upgrade → grade → wipe. Opens the next machine automatically. Repairs too |
+| Add stock | New purchase batch from an Excel sheet (any column order, bad rows flagged) or by scanning serials |
+| Big orders | Auto-picks machines (closest spec, oldest stock, no MacBooks), books them, Excel serial list, dispatch |
 | Shop sale | Sells one machine, blocks machines booked for big orders, prints a warranty slip |
+| Returns & warranty | Warranty check by serial, record a return with reason and refund — the machine goes back to checking |
+| Labels | Printable labels with a real Code-128 barcode of the serial, for one machine or a whole batch |
 | Batches | Money back, profit so far and expected profit for every purchase batch |
+| Staff | Add people, set roles and PINs, switch off access |
 
-## Prototype notes
+## How it's built
 
-- All data is sample data (~1,300 machines), saved in the browser. "Reset demo data" in the sidebar restores it.
-- `src/lib/data/` is the only layer that changes when this moves to a real database (Supabase).
-  Screens only talk to `store.ts` and `selectors.ts`.
+```
+src/
+  app/                    screens (one folder each) + api/snapshot, api/staff
+  components/             shared UI: app shell, login, machine panel, scanner, barcode, ui/*
+  lib/
+    data/types.ts         the data model
+    data/selectors.ts     pure business maths (auto-pick, ready stock, batch profit) — used by server and browser
+    data/store.ts         browser cache; every change goes through a server action
+    roles.ts              who can do what (menu + server checks use the same table)
+  server/
+    db.ts                 Postgres: DATABASE_URL (Supabase) or embedded PGlite on a laptop
+    schema.ts             tables, created automatically
+    service.ts            all business rules, one transaction per action
+    actions.ts            server actions: check login → check role → run → return what changed
+    auth.ts, pin.ts       4-digit PIN login, scrypt-hashed PINs, signed httpOnly session cookie
+    repo.ts               reading data; hides costs and profit from technician and counter roles
+```
 
-## 8-minute demo script
+- **Security:** roles are enforced on the server for every change, not just hidden in the menu.
+  Technician and counter accounts never receive buying prices, profit or batch costs.
+- **Several people at once:** booking an order locks the ready stock, so two people can't book the
+  same machine. Screens refresh every 45 seconds and whenever the tab comes back into view.
+- **Every change is recorded** in the machine's history and the activity feed, with the staff name.
 
-1. **Home** — "398 machines ready to sell", stock split by shop/godown, profit last 30 days.
+## Demo script (8 minutes)
+
+1. Log in as **Shop owner** (1111). Home: "N machines ready to sell", stock by stage, profit in 30 days.
 2. **Add stock** → "Download a sample sheet (200 machines)" → upload it → Add → lands in Check & grade.
-3. **Check & grade** → open a machine → battery 85% → Grade A → wiped → Mark ready. Next one opens by itself.
-4. **Ready stock** → "120 × i5 8th gen, 8 GB, 256 GB, Grade A" → "Yes — you have N" → **Book 120 for a buyer** → Book.
+3. **Check & grade** → open a machine → battery 85% → Grade A → wiped → Mark ready. The next one opens by itself.
+4. **Ready stock** → "120 × i5 8th gen, 8 GB, 256 GB, Grade A" → **Book 120 for a buyer** → Book.
 5. **Big orders** → download the serial list (Excel).
-6. **Shop sale** → type a serial from that order → blocked. Type "T480" → sell → print the warranty slip.
-7. **Batches** → which lots made money, which had too much scrap.
+6. On a phone, log in as **Salma (counter)** (4444): type a serial from that order → blocked.
+   Sell a T480 → warranty slip. Then **Returns & warranty** → check that serial → record a return.
+7. Back as owner: the activity feed shows Salma's sale and return. **Batches** → which lots made money.
 8. Close: "Tell me how you do it today and I'll fit it to you."

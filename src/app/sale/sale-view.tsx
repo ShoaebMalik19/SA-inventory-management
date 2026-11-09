@@ -6,6 +6,7 @@ import { Ban, Printer, ScanLine, Store } from "lucide-react";
 import { useStore } from "@/lib/data/store";
 import type { Machine, ShopSale } from "@/lib/data/types";
 import { PageHeader } from "@/components/page-header";
+import { ScanButton } from "@/components/scan-button";
 import { Sheet } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/fields";
@@ -49,10 +50,13 @@ export function SaleView({ initialId }: { initialId?: string }) {
     setQ("");
   };
 
-  const sell = () => {
+  const [busy, setBusy] = useState(false);
+  const sell = async () => {
     if (!selected) return;
-    const res = shopSell(selected.id, customer.trim(), phone.trim(), price || 0, warranty);
-    if (!res.ok) return toast.error(res.reason);
+    setBusy(true);
+    const res = await shopSell({ machineId: selected.id, customer: customer.trim(), phone: phone.trim(), price: price || 0, warrantyMonths: warranty });
+    setBusy(false);
+    if (!res.ok) return toast.error(res.error);
     toast.success(`Sold — ${selected.brand} ${selected.model} to ${customer.trim()}`);
     setReceipt(res.sale);
     setSelectedId(null);
@@ -72,7 +76,8 @@ export function SaleView({ initialId }: { initialId?: string }) {
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px]">
         <section className="rounded-[var(--radius-panel)] border border-line bg-surface p-5 sm:p-6">
           <h2 className="font-display text-lg font-bold">1. Find the machine</h2>
-          <div className="relative mt-3">
+          <div className="mt-3 flex gap-2">
+          <div className="relative flex-1">
             <ScanLine className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-ink-3" />
             <Input
               value={q}
@@ -103,6 +108,15 @@ export function SaleView({ initialId }: { initialId?: string }) {
                 ))}
               </ul>
             )}
+          </div>
+          <ScanButton
+            className="h-14 rounded-2xl"
+            onScan={(t) => {
+              const hit = machines.find((m) => m.serial.toLowerCase() === t.toLowerCase());
+              if (hit) choose(hit);
+              else toast.error(`No machine with serial ${t}`);
+            }}
+          />
           </div>
 
           {!selected ? (
@@ -182,7 +196,7 @@ export function SaleView({ initialId }: { initialId?: string }) {
               </p>
             ) : null}
           </div>
-          <Button size="lg" className="mt-5 w-full" disabled={!canSell} onClick={sell}>
+          <Button size="lg" className="mt-5 w-full" disabled={!canSell || busy} onClick={sell}>
             <Store /> Complete sale{price ? ` — ${rupees(price)}` : ""}
           </Button>
         </section>

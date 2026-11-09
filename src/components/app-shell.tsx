@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Toaster, toast } from "sonner";
 import {
   ClipboardCheck,
@@ -10,33 +10,35 @@ import {
   Laptop,
   Layers,
   LayoutGrid,
+  LogOut,
   Menu,
   PackagePlus,
   RotateCcw,
   Store,
   Truck,
+  Undo2,
+  Users,
+  WifiOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useHydrated, useStore } from "@/lib/data/store";
+import { useStore } from "@/lib/data/store";
+import { can, canOpen, HOME_FOR, ROLE_LABEL } from "@/lib/roles";
 import { Sheet } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
 import { MachineSheet } from "@/components/machine-sheet";
+import { LoginScreen } from "@/components/login-screen";
 
 export const NAV = [
-  { href: "/", label: "Home", icon: House },
-  { href: "/machines", label: "All machines", icon: Laptop },
-  { href: "/stock", label: "Ready stock", icon: LayoutGrid },
-  { href: "/check", label: "Check & grade", icon: ClipboardCheck, badge: "checking" as const },
-  { href: "/add", label: "Add stock", icon: PackagePlus },
-  { href: "/orders", label: "Big orders", icon: Truck },
-  { href: "/sale", label: "Shop sale", icon: Store },
-  { href: "/batches", label: "Batches", icon: Layers },
-];
-
-const MOBILE_NAV = [
-  { ...NAV[0], short: "Home" },
-  { ...NAV[1], short: "Machines" },
-  { ...NAV[3], short: "Check" },
-  { ...NAV[6], short: "Sell" },
+  { href: "/", label: "Home", short: "Home", icon: House },
+  { href: "/machines", label: "All machines", short: "Machines", icon: Laptop },
+  { href: "/stock", label: "Ready stock", short: "Ready", icon: LayoutGrid },
+  { href: "/check", label: "Check & grade", short: "Check", icon: ClipboardCheck, badge: true },
+  { href: "/add", label: "Add stock", short: "Add", icon: PackagePlus },
+  { href: "/orders", label: "Big orders", short: "Orders", icon: Truck },
+  { href: "/sale", label: "Shop sale", short: "Sell", icon: Store },
+  { href: "/returns", label: "Returns & warranty", short: "Returns", icon: Undo2 },
+  { href: "/batches", label: "Batches", short: "Batches", icon: Layers },
+  { href: "/staff", label: "Staff", short: "Staff", icon: Users },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -68,48 +70,107 @@ function ResetButton({ className }: { className?: string }) {
   const resetDemo = useStore((s) => s.resetDemo);
   return (
     <button
-      onClick={() => {
-        if (confirm("Reset all demo data back to the starting stock?")) {
-          resetDemo();
-          toast.success("Demo data reset");
-        }
+      onClick={async () => {
+        if (!confirm("Reset all stock, orders and sales back to the sample data? Staff and PINs are kept.")) return;
+        const res = await resetDemo();
+        if (res.ok) toast.success("Sample data restored");
+        else toast.error(res.error);
       }}
       className={cn("flex items-center gap-2 text-[13px] transition", className)}
     >
-      <RotateCcw className="size-3.5" /> Reset demo data
+      <RotateCcw className="size-3.5" /> Reset sample data
     </button>
   );
 }
 
-function Loading() {
+function Splash({ text }: { text: string }) {
   return (
     <div className="grid min-h-dvh place-items-center">
       <div className="flex flex-col items-center gap-4">
-        <span className="grid h-12 w-14 animate-pulse place-items-center rounded-[10px] bg-tag font-display text-lg font-extrabold text-ink">
-          S.A
-        </span>
-        <span className="text-sm text-ink-3">Opening your stock…</span>
+        <span className="grid h-12 w-14 animate-pulse place-items-center rounded-[10px] bg-tag font-display text-lg font-extrabold text-ink">S.A</span>
+        <span className="text-sm text-ink-3">{text}</span>
       </div>
+    </div>
+  );
+}
+
+function UserChip({ light }: { light?: boolean }) {
+  const user = useStore((s) => s.user)!;
+  const signOut = useStore((s) => s.signOut);
+  return (
+    <div className={cn("flex items-center gap-3 rounded-xl p-2", light ? "bg-white/[.06]" : "bg-mist")}>
+      <span className={cn("grid size-9 shrink-0 place-items-center rounded-full font-display text-sm font-bold", light ? "bg-white/15 text-white" : "bg-brand-soft text-brand-deep")}>
+        {user.name.replace(/\(.*\)/, "").trim()[0]}
+      </span>
+      <span className="min-w-0 flex-1 leading-tight">
+        <span className={cn("block truncate text-sm font-semibold", light ? "text-white" : "text-ink")}>{user.name}</span>
+        <span className={cn("block text-[12px]", light ? "text-white/50" : "text-ink-3")}>{ROLE_LABEL[user.role]}</span>
+      </span>
+      <button
+        onClick={signOut}
+        aria-label="Log out"
+        title="Log out"
+        className={cn("grid size-8 place-items-center rounded-lg transition", light ? "text-white/60 hover:bg-white/10 hover:text-white" : "text-ink-3 hover:bg-line")}
+      >
+        <LogOut className="size-4" />
+      </button>
     </div>
   );
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const hydrated = useHydrated();
+  const router = useRouter();
+  const status = useStore((s) => s.status);
+  const user = useStore((s) => s.user);
+  const load = useStore((s) => s.load);
   const [moreOpen, setMoreOpen] = useState(false);
 
-  if (!hydrated) return <Loading />;
+  // first load, then stay fresh: when the tab comes back into view and every 45 seconds
+  useEffect(() => {
+    void load();
+    const refresh = () => document.visibilityState === "visible" && useStore.getState().status === "ready" && load(true);
+    const t = setInterval(refresh, 45_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [load]);
+
+  const allowed = user ? canOpen(user.role, pathname) : true;
+  useEffect(() => {
+    if (user && pathname === "/" && !allowed) router.replace(HOME_FOR[user.role]);
+  }, [user, pathname, allowed, router]);
+
+  if (status === "loading") return <Splash text="Opening your stock…" />;
+  if (status === "signed-out") return <LoginScreen />;
+  if (status === "offline")
+    return (
+      <div className="grid min-h-dvh place-items-center px-6 text-center">
+        <div>
+          <WifiOff className="mx-auto size-8 text-ink-3" />
+          <p className="font-display mt-3 text-xl font-bold">Can&apos;t reach the server</p>
+          <p className="mt-1 text-ink-2">Check the internet connection, then try again.</p>
+          <Button className="mt-5" onClick={() => load()}>
+            Try again
+          </Button>
+        </div>
+      </div>
+    );
+  if (!user) return <Splash text="Opening your stock…" />;
+
+  const nav = NAV.filter((n) => canOpen(user.role, n.href));
+  const mobile = nav.slice(0, 4);
 
   return (
     <div className="min-h-dvh lg:pl-[264px]">
-      {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[264px] flex-col bg-brand-deep px-4 py-6 lg:flex">
         <div className="px-2">
           <Logo light />
         </div>
-        <nav className="mt-9 flex flex-col gap-0.5">
-          {NAV.map((item) => {
+        <nav className="mt-8 flex flex-col gap-0.5">
+          {nav.map((item) => {
             const active = isActive(pathname, item.href);
             return (
               <Link
@@ -128,24 +189,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <div className="mt-auto space-y-3 px-3">
-          <p className="text-[12.5px] leading-relaxed text-white/40">
-            Prototype with sample data. Everything you do here is saved in this browser.
-          </p>
-          <ResetButton className="text-white/55 hover:text-white" />
+        <div className="mt-auto space-y-3">
+          {can(user.role, "reset") && <ResetButton className="px-3 text-white/45 hover:text-white" />}
+          <UserChip light />
         </div>
       </aside>
 
-      {/* Phone top bar */}
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-line-soft bg-mist/90 px-4 py-3 backdrop-blur lg:hidden">
         <Logo />
       </header>
 
-      <main className="mx-auto w-full max-w-[1240px] px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-14 lg:pt-10">{children}</main>
+      <main className="mx-auto w-full max-w-[1240px] px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-14 lg:pt-10">
+        {allowed ? (
+          children
+        ) : (
+          <div className="rounded-[var(--radius-panel)] border border-dashed border-line bg-surface px-6 py-16 text-center">
+            <p className="font-display text-xl font-bold">This page isn&apos;t part of your job</p>
+            <p className="mt-1 text-ink-2">Ask the owner if you need access.</p>
+            <Button asChild className="mt-5">
+              <Link href={HOME_FOR[user.role]}>Go to my screen</Link>
+            </Button>
+          </div>
+        )}
+      </main>
 
-      {/* Phone bottom bar */}
       <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
-        {MOBILE_NAV.map((item) => {
+        {mobile.map((item) => {
           const active = isActive(pathname, item.href);
           return (
             <Link key={item.href} href={item.href} className={cn("flex flex-col items-center gap-1 py-2.5 text-[11.5px] font-semibold", active ? "text-brand" : "text-ink-3")}>
@@ -161,22 +230,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </nav>
 
       <Sheet open={moreOpen} onOpenChange={setMoreOpen} title="All sections" side="center">
-        <div className="grid grid-cols-2 gap-2 p-5 pt-14">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setMoreOpen(false)}
-              className={cn(
-                "flex items-center gap-3 rounded-xl border px-3.5 py-3.5 text-[15px] font-semibold",
-                isActive(pathname, item.href) ? "border-brand bg-brand-soft text-brand-deep" : "border-line text-ink",
-              )}
-            >
-              <item.icon className="size-5" />
-              {item.label}
-            </Link>
-          ))}
-          <ResetButton className="col-span-2 mt-2 justify-center py-2 text-ink-3" />
+        <div className="p-5 pt-14">
+          <div className="grid grid-cols-2 gap-2">
+            {nav.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMoreOpen(false)}
+                className={cn(
+                  "flex items-center gap-3 rounded-xl border px-3.5 py-3.5 text-[15px] font-semibold",
+                  isActive(pathname, item.href) ? "border-brand bg-brand-soft text-brand-deep" : "border-line text-ink",
+                )}
+              >
+                <item.icon className="size-5" />
+                {item.label}
+              </Link>
+            ))}
+          </div>
+          <div className="mt-4">
+            <UserChip />
+          </div>
+          {can(user.role, "reset") && <ResetButton className="mx-auto mt-3 py-2 text-ink-3" />}
         </div>
       </Sheet>
 

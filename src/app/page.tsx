@@ -5,6 +5,9 @@ import { useMemo } from "react";
 import { motion } from "motion/react";
 import {
   AlertTriangle,
+  ArrowLeftRight,
+  Undo2,
+  Users,
   ArrowUpRight,
   ClipboardCheck,
   Clock,
@@ -43,6 +46,9 @@ const ACTIVITY_ICON: Record<Activity["kind"], typeof Truck> = {
   dispatch: Truck,
   sale: Store,
   repair: Wrench,
+  return: Undo2,
+  move: ArrowLeftRight,
+  staff: Users,
 };
 
 export default function HomePage() {
@@ -238,7 +244,10 @@ export default function HomePage() {
                 <span className="grid size-9 shrink-0 place-items-center rounded-full bg-mist text-ink-2">
                   <Icon className="size-4" />
                 </span>
-                <p className="min-w-0 flex-1 text-[14.5px]">{a.text}</p>
+                <p className="min-w-0 flex-1 text-[14.5px]">
+                  {a.text}
+                  {a.by && <span className="text-ink-3"> · {a.by}</span>}
+                </p>
                 <span className="shrink-0 text-[13px] text-ink-3">{timeAgo(a.at)}</span>
               </li>
             );

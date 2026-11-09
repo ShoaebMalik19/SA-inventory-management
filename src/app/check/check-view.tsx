@@ -7,6 +7,7 @@ import { useStore } from "@/lib/data/store";
 import type { Grade, Machine } from "@/lib/data/types";
 import { FAIL_CHECKS } from "@/lib/data/seed";
 import { PageHeader } from "@/components/page-header";
+import { ScanButton } from "@/components/scan-button";
 import { Sheet } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/fields";
@@ -36,8 +37,8 @@ export function CheckView({ initialId }: { initialId?: string }) {
     setActiveId(next ? next.id : null);
   };
 
-  const findBySerial = () => {
-    const s = scan.trim().toLowerCase();
+  const findBySerial = (value?: string) => {
+    const s = (value ?? scan).trim().toLowerCase();
     const m = machines.find((x) => x.serial.toLowerCase() === s);
     if (!m) return toast.error("No machine with this serial number. Check the number and try again.");
     if (m.stage !== "checking" && m.stage !== "repair") return toast.info(`This machine is already checked. Status: ${m.stage === "ready" ? "Ready to sell" : m.stage}.`);
@@ -64,9 +65,10 @@ export function CheckView({ initialId }: { initialId?: string }) {
             className="h-14 rounded-2xl pl-12 text-[16px]"
           />
         </div>
-        <Button size="lg" className="h-14 rounded-2xl" onClick={findBySerial} disabled={!scan.trim()}>
+        <Button size="lg" className="h-14 rounded-2xl" onClick={() => findBySerial()} disabled={!scan.trim()}>
           Open machine
         </Button>
+        <ScanButton className="h-14 justify-center rounded-2xl" label="Scan with camera" onScan={(t) => findBySerial(t)} />
       </div>
 
       <div className="mt-5 inline-flex rounded-xl border border-line bg-surface p-1">
@@ -198,8 +200,11 @@ function CheckForm({ m, remaining, onDone }: { m: Machine; remaining: number; on
   const upgraded = ram !== m.ram || storage !== m.storage;
   const canReady = !!grade && wiped && (m.type === "Desktop" || battery !== "");
 
-  const save = (outcome: "ready" | "repair" | "scrap") => {
-    checkMachine(m.id, {
+  const [busy, setBusy] = useState(false);
+  const save = async (outcome: "ready" | "repair" | "scrap") => {
+    setBusy(true);
+    const res = await checkMachine({
+      id: m.id,
       failed,
       battery: battery === "" ? undefined : battery,
       wiped,
@@ -207,6 +212,8 @@ function CheckForm({ m, remaining, onDone }: { m: Machine; remaining: number; on
       outcome,
       upgrade: upgraded ? { ram, storage, cost: upgradeCost || 0 } : undefined,
     });
+    setBusy(false);
+    if (!res.ok) return toast.error(res.error);
     toast.success(
       outcome === "ready"
         ? `${m.model} is ready to sell — Grade ${grade}`
@@ -332,7 +339,7 @@ function CheckForm({ m, remaining, onDone }: { m: Machine; remaining: number; on
       </Step>
 
       <div className="sticky bottom-0 space-y-2 bg-surface/95 px-5 py-4 backdrop-blur">
-        <Button size="lg" className="w-full" disabled={!canReady} onClick={() => save("ready")}>
+        <Button size="lg" className="w-full" disabled={!canReady || busy} onClick={() => save("ready")}>
           <Check /> Mark ready to sell{grade ? ` — Grade ${grade}` : ""}
         </Button>
         {!canReady && (
@@ -341,10 +348,10 @@ function CheckForm({ m, remaining, onDone }: { m: Machine; remaining: number; on
           </p>
         )}
         <div className="grid grid-cols-2 gap-2">
-          <Button variant="outline" onClick={() => save("repair")} disabled={!failed.length}>
+          <Button variant="outline" onClick={() => save("repair")} disabled={!failed.length || busy}>
             <Wrench /> Send to repair
           </Button>
-          <Button variant="outline" onClick={() => save("scrap")} className="text-st-scrap">
+          <Button variant="outline" onClick={() => save("scrap")} disabled={busy} className="text-st-scrap">
             <Trash2 /> Scrap / parts
           </Button>
         </div>
@@ -358,6 +365,7 @@ function RepairForm({ m, onDone }: { m: Machine; onDone: () => void }) {
   const [part, setPart] = useState(m.failedChecks?.join(", ") ? `${m.failedChecks.join(", ")} fixed` : "");
   const [cost, setCost] = useState<number | "">("");
   const [grade, setGrade] = useState<Grade | null>(null);
+  const [busy, setBusy] = useState(false);
 
   return (
     <div>
@@ -384,9 +392,12 @@ function RepairForm({ m, onDone }: { m: Machine; onDone: () => void }) {
         <Button
           size="lg"
           className="w-full"
-          disabled={!grade || !part.trim()}
-          onClick={() => {
-            finishRepair(m.id, part.trim(), cost || 0, grade!);
+          disabled={!grade || !part.trim() || busy}
+          onClick={async () => {
+            setBusy(true);
+            const res = await finishRepair(m.id, part.trim(), cost || 0, grade!);
+            setBusy(false);
+            if (!res.ok) return toast.error(res.error);
             toast.success(`${m.model} repaired and ready to sell — Grade ${grade}`);
             onDone();
           }}

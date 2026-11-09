@@ -1,7 +1,10 @@
 "use client";
 
 import { useDeferredValue, useMemo, useState } from "react";
-import { Download, Search, X } from "lucide-react";
+import { ArrowLeftRight, Check, Download, Printer, Search, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { ScanButton } from "@/components/scan-button";
 import * as XLSX from "xlsx";
 import { useStore } from "@/lib/data/store";
 import { useUI } from "@/lib/ui-store";
@@ -20,6 +23,18 @@ export function MachinesView({ initialStage, initialOld }: { initialStage?: Stag
   const machines = useStore((s) => s.machines);
   const batches = useStore((s) => s.batches);
   const openMachine = useUI((s) => s.openMachine);
+  const setLabelIds = useUI((s) => s.setLabelIds);
+  const moveMachines = useStore((s) => s.moveMachines);
+  const router = useRouter();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const toggle = (id: string) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
 
   const [q, setQ] = useState("");
   const query = useDeferredValue(q.trim().toLowerCase());
@@ -113,7 +128,8 @@ export function MachinesView({ initialStage, initialOld }: { initialStage?: Stag
         }
       />
 
-      <div className="relative">
+      <div className="flex gap-2">
+      <div className="relative flex-1">
         <Search className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-ink-3" />
         <Input
           autoFocus
@@ -136,6 +152,16 @@ export function MachinesView({ initialStage, initialOld }: { initialStage?: Stag
             Open {exact.serial}
           </button>
         )}
+      </div>
+      <ScanButton
+        className="h-14 rounded-2xl"
+        onScan={(t) => {
+          setQ(t);
+          const hit = machines.find((m) => m.serial.toLowerCase() === t.toLowerCase());
+          if (hit) openMachine(hit.id);
+          else toast.error(`No machine with serial ${t}`);
+        }}
+      />
       </div>
 
       <div className="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
@@ -219,7 +245,22 @@ export function MachinesView({ initialStage, initialOld }: { initialStage?: Stag
           <table className="hidden w-full text-left md:table">
             <thead>
               <tr className="border-b border-line text-[12.5px] font-semibold text-ink-3">
-                <th className="py-3 pl-5 pr-3 font-semibold">Machine</th>
+                <th className="w-12 py-3 pl-5">
+                  <Tick
+                    on={filtered.slice(0, shown).length > 0 && filtered.slice(0, shown).every((m) => selected.has(m.id))}
+                    onClick={() =>
+                      setSelected((s) => {
+                        const page = filtered.slice(0, shown);
+                        const all = page.every((m) => s.has(m.id));
+                        const n = new Set(s);
+                        page.forEach((m) => (all ? n.delete(m.id) : n.add(m.id)));
+                        return n;
+                      })
+                    }
+                    label="Select all shown"
+                  />
+                </th>
+                <th className="py-3 pr-3 font-semibold">Machine</th>
                 <th className="px-3 font-semibold">Serial</th>
                 <th className="px-3 font-semibold">Grade</th>
                 <th className="px-3 font-semibold">Status</th>
@@ -235,9 +276,12 @@ export function MachinesView({ initialStage, initialOld }: { initialStage?: Stag
                   tabIndex={0}
                   onClick={() => openMachine(m.id)}
                   onKeyDown={(e) => e.key === "Enter" && openMachine(m.id)}
-                  className="cursor-pointer border-b border-line-soft transition last:border-0 hover:bg-mist/70 focus-visible:bg-mist"
+                  className={cn("cursor-pointer border-b border-line-soft transition last:border-0 hover:bg-mist/70 focus-visible:bg-mist", selected.has(m.id) && "bg-brand-soft/50")}
                 >
-                  <td className="py-3 pl-5 pr-3">
+                  <td className="py-3 pl-5" onClick={(e) => e.stopPropagation()}>
+                    <Tick on={selected.has(m.id)} onClick={() => toggle(m.id)} label={`Select ${m.serial}`} />
+                  </td>
+                  <td className="py-3 pr-3">
                     <p className="text-[15px] font-semibold">
                       {m.brand} {m.model}
                     </p>
@@ -273,8 +317,9 @@ export function MachinesView({ initialStage, initialOld }: { initialStage?: Stag
           {/* phone list */}
           <ul className="divide-y divide-line-soft md:hidden">
             {filtered.slice(0, shown).map((m) => (
-              <li key={m.id}>
-                <button onClick={() => openMachine(m.id)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left">
+              <li key={m.id} className={cn("flex items-center pl-4", selected.has(m.id) && "bg-brand-soft/50")}>
+                <Tick on={selected.has(m.id)} onClick={() => toggle(m.id)} label={`Select ${m.serial}`} />
+                <button onClick={() => openMachine(m.id)} className="flex w-full items-center gap-3 px-3 py-3.5 text-left">
                   <GradeBadge grade={m.grade} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[15px] font-semibold">
@@ -293,6 +338,45 @@ export function MachinesView({ initialStage, initialOld }: { initialStage?: Stag
         </div>
       )}
 
+      {selected.size > 0 && (
+        <div className="fixed inset-x-3 bottom-20 z-40 mx-auto flex max-w-3xl flex-wrap items-center gap-2 rounded-2xl bg-ink p-3 pl-5 text-white shadow-[0_20px_60px_-15px_rgba(15,42,38,.6)] lg:bottom-6 lg:left-[288px]">
+          <span className="mr-auto text-[15px] font-semibold">{count(selected.size)} selected</span>
+          {(["Shop", "Godown"] as const).map((to) => (
+            <Button
+              key={to}
+              size="sm"
+              variant="tag"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                const res = await moveMachines([...selected], to);
+                setBusy(false);
+                if (res.ok) {
+                  toast.success(`Moved to the ${to.toLowerCase()}`, { description: "Sold and scrap machines were skipped." });
+                  setSelected(new Set());
+                } else toast.error(res.error);
+              }}
+            >
+              <ArrowLeftRight /> To {to.toLowerCase()}
+            </Button>
+          ))}
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-white/20 bg-white/10 text-white hover:bg-white/20"
+            onClick={() => {
+              setLabelIds([...selected]);
+              router.push("/labels");
+            }}
+          >
+            <Printer /> Print {selected.size} labels
+          </Button>
+          <button onClick={() => setSelected(new Set())} className="grid size-8 place-items-center rounded-lg text-white/60 hover:bg-white/10 hover:text-white" aria-label="Clear selection">
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
+
       {shown < filtered.length && (
         <div className="mt-4 flex justify-center">
           <Button variant="outline" onClick={() => setShown((s) => s + PAGE * 2)}>
@@ -301,5 +385,23 @@ export function MachinesView({ initialStage, initialOld }: { initialStage?: Stag
         </div>
       )}
     </div>
+  );
+}
+
+function Tick({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={on}
+      aria-label={label}
+      onClick={onClick}
+      className={cn(
+        "grid size-[22px] shrink-0 place-items-center rounded-md border-2 transition",
+        on ? "border-brand bg-brand text-white" : "border-line bg-surface hover:border-ink-3",
+      )}
+    >
+      {on && <Check className="size-3.5" strokeWidth={3} />}
+    </button>
   );
 }

@@ -9,6 +9,7 @@ import type { Grade, MachineType, Requirement } from "@/lib/data/types";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { RequirementFields } from "@/components/requirement-fields";
+import { can } from "@/lib/roles";
 import { count, rupees } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -136,6 +137,7 @@ function HeatCell({ n, max }: { n: number; max: number }) {
 /** "A buyer wants 120 × i5 8th gen 8/256 Grade A — do we have it?" */
 function CanIFill() {
   const machines = useStore((s) => s.machines);
+  const canBook = useStore((s) => can(s.user?.role, "orders"));
   const [need, setNeed] = useState<Requirement>({
     type: "Laptop",
     cpu: "Core i5",
@@ -180,7 +182,7 @@ function CanIFill() {
             </p>
           </div>
         </div>
-        {result.available > 0 && (
+        {result.available > 0 && canBook && (
           <Button asChild size="lg" className="shrink-0">
             <Link href={`/orders?${params}`}>
               <Truck /> Book {count(Math.min(need.qty, result.available))} for a buyer

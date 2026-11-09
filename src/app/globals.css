@@ -110,3 +110,19 @@ body {
   .print-area, .print-area * { visibility: visible !important; }
   .print-area { position: fixed; left: 0; top: 0; width: 100%; border: none; }
 }
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-8px); }
+  75% { transform: translateX(8px); }
+}
+
+@media print {
+  .print-labels, .print-labels * { visibility: visible !important; }
+  .print-labels {
+    position: absolute; left: 0; top: 0; width: 100%;
+    display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 4mm !important; margin: 0 !important;
+  }
+  .print-labels .label { break-inside: avoid; border-width: 1px; }
+  @page { margin: 8mm; }
+}

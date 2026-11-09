@@ -58,6 +58,7 @@ export function OrdersView({ prefill }: { prefill?: Requirement }) {
   const dispatchOrder = useStore((s) => s.dispatchOrder);
   const cancelOrder = useStore((s) => s.cancelOrder);
   const [creating, setCreating] = useState(!!prefill);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const byId = useMemo(() => new Map(machines.map((m) => [m.id, m])), [machines]);
   const sorted = [...orders].sort((a, b) => (a.status === "booked" ? -1 : 0) - (b.status === "booked" ? -1 : 0) || b.createdAt.localeCompare(a.createdAt));
@@ -137,8 +138,12 @@ export function OrdersView({ prefill }: { prefill?: Requirement }) {
                   <>
                     <Button
                       size="sm"
-                      onClick={() => {
-                        dispatchOrder(o.id);
+                      disabled={busyId === o.id}
+                      onClick={async () => {
+                        setBusyId(o.id);
+                        const res = await dispatchOrder(o.id);
+                        setBusyId(null);
+                        if (!res.ok) return toast.error(res.error);
                         toast.success(`${o.code} dispatched to ${o.buyer}`, { description: `${o.machineIds.length} machines marked as sold.` });
                       }}
                     >
@@ -148,9 +153,13 @@ export function OrdersView({ prefill }: { prefill?: Requirement }) {
                       size="sm"
                       variant="ghost"
                       className="text-st-scrap"
-                      onClick={() => {
+                      disabled={busyId === o.id}
+                      onClick={async () => {
                         if (!confirm(`Cancel ${o.code}? The ${o.machineIds.length} machines go back to ready stock.`)) return;
-                        cancelOrder(o.id);
+                        setBusyId(o.id);
+                        const res = await cancelOrder(o.id);
+                        setBusyId(null);
+                        if (!res.ok) return toast.error(res.error);
                         toast.success(`${o.code} cancelled — machines are back in ready stock`);
                       }}
                     >
@@ -180,6 +189,7 @@ function NewOrderForm({ initial, onDone }: { initial: Requirement; onDone: () =>
   const [buyer, setBuyer] = useState(buyers[0] ?? "");
   const [need, setNeed] = useState<Requirement>(initial);
   const [unitPrice, setUnitPrice] = useState<number | "">(17500);
+  const [busy, setBusy] = useState(false);
 
   const { picked, available, shortBy } = useMemo(() => pickForRequirement(machines, need), [machines, need]);
   const cost = picked.reduce((s, m) => s + m.cost + m.repairCost, 0);
@@ -251,11 +261,13 @@ function NewOrderForm({ initial, onDone }: { initial: Requirement; onDone: () =>
         <Button
           size="lg"
           className="w-full"
-          disabled={!canBook}
-          onClick={() => {
-            const o = createOrder(buyer.trim(), { ...need, qty: picked.length }, unitPrice || 0);
-            if (!o) return toast.error("No machines fit this order.");
-            toast.success(`${o.code} booked — ${o.machineIds.length} machines set aside for ${o.buyer}`, {
+          disabled={!canBook || busy}
+          onClick={async () => {
+            setBusy(true);
+            const res = await createOrder(buyer.trim(), { ...need, qty: picked.length }, unitPrice || 0);
+            setBusy(false);
+            if (!res.ok) return toast.error(res.error);
+            toast.success(`${res.orderCode} booked — ${picked.length} machines set aside for ${buyer.trim()}`, {
               description: "They can't be sold at the shop now. Download the serial list for packing.",
             });
             onDone();

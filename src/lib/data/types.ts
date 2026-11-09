@@ -25,7 +25,8 @@ export const STAGE_ORDER: Stage[] = ["checking", "repair", "ready", "booked", "s
 export type HistoryEvent = {
   at: string; // ISO
   text: string;
-  kind: "added" | "checked" | "repair" | "upgrade" | "moved" | "booked" | "released" | "sold";
+  by?: string; // staff name
+  kind: "added" | "checked" | "repair" | "upgrade" | "moved" | "booked" | "released" | "sold" | "returned";
 };
 
 export type Machine = {
@@ -104,13 +105,37 @@ export type ShopSale = {
   price: number;
   warrantyMonths: number;
   at: string;
+  by?: string;
 };
 
 export type Activity = {
   id: string;
   at: string;
   text: string;
-  kind: "batch" | "check" | "order" | "dispatch" | "sale" | "repair";
+  kind: "batch" | "check" | "order" | "dispatch" | "sale" | "repair" | "return" | "move" | "staff";
+  by?: string;
+};
+
+export type ReturnRecord = {
+  id: string;
+  code: string; // "RT-3001"
+  machineId: string;
+  from: "shop" | "order";
+  refCode: string; // the sale or order it came back from
+  customer: string;
+  reason: string;
+  refund: number;
+  at: string;
+  by?: string;
+};
+
+export type Role = "owner" | "manager" | "technician" | "counter";
+
+export type Staff = {
+  id: string;
+  name: string;
+  role: Role;
+  active: boolean;
 };
 
 /** The single "spec" a buyer thinks in: i5 8th gen · 8GB · 256GB. */
