@@ -6,7 +6,10 @@ import { useEffect, useState } from "react";
 import { Toaster, toast } from "sonner";
 import {
   ClipboardCheck,
+  FileText,
   House,
+  IndianRupee,
+  Settings,
   Laptop,
   Layers,
   LayoutGrid,
@@ -23,6 +26,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useStore } from "@/lib/data/store";
 import { can, canOpen, HOME_FOR, ROLE_LABEL } from "@/lib/roles";
+import { invoiceMoney } from "@/lib/data/selectors";
 import { Sheet } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { MachineSheet } from "@/components/machine-sheet";
@@ -36,9 +40,12 @@ export const NAV = [
   { href: "/add", label: "Add stock", short: "Add", icon: PackagePlus },
   { href: "/orders", label: "Big orders", short: "Orders", icon: Truck },
   { href: "/sale", label: "Shop sale", short: "Sell", icon: Store },
+  { href: "/invoices", label: "Invoices", short: "Bills", icon: FileText },
+  { href: "/money", label: "Money to collect", short: "Money", icon: IndianRupee, dues: true },
   { href: "/returns", label: "Returns & warranty", short: "Returns", icon: Undo2 },
   { href: "/batches", label: "Batches", short: "Batches", icon: Layers },
   { href: "/staff", label: "Staff", short: "Staff", icon: Users },
+  { href: "/settings", label: "Settings", short: "Settings", icon: Settings },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -64,6 +71,16 @@ function WaitingBadge() {
   const n = useStore((s) => s.machines.reduce((c, m) => c + (m.stage === "checking" ? 1 : 0), 0));
   if (!n) return null;
   return <span className="ml-auto rounded-full bg-tag px-2 py-0.5 text-[11.5px] font-bold text-ink">{n}</span>;
+}
+
+function OverdueBadge() {
+  const n = useStore((s) => {
+    let c = 0;
+    for (const inv of s.invoices) if (invoiceMoney(inv, s.payments).status === "overdue") c++;
+    return c;
+  });
+  if (!n) return null;
+  return <span className="ml-auto rounded-full bg-st-scrap px-2 py-0.5 text-[11.5px] font-bold text-white">{n}</span>;
 }
 
 function ResetButton({ className }: { className?: string }) {
@@ -169,7 +186,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="px-2">
           <Logo light />
         </div>
-        <nav className="mt-8 flex flex-col gap-0.5">
+        <nav className="-mx-1 mt-8 flex flex-col gap-0.5 overflow-y-auto px-1">
           {nav.map((item) => {
             const active = isActive(pathname, item.href);
             return (
@@ -177,7 +194,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium transition",
+                  "relative flex items-center gap-3 rounded-xl px-3 py-2 text-[15px] font-medium transition",
                   active ? "bg-white/[.09] text-white" : "text-white/60 hover:bg-white/[.05] hover:text-white",
                 )}
               >
@@ -185,6 +202,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <item.icon className="size-[18px]" strokeWidth={active ? 2.3 : 1.9} />
                 {item.label}
                 {item.badge && <WaitingBadge />}
+                {item.dues && <OverdueBadge />}
               </Link>
             );
           })}

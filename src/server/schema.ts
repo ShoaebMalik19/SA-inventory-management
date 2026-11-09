@@ -121,6 +121,59 @@ create table if not exists activity (
 );
 create index if not exists activity_at_idx on activity(at desc);
 
+create table if not exists buyers (
+  id text primary key,
+  name text not null unique,
+  phone text,
+  gstin text,
+  state text not null default 'Karnataka',
+  address text,
+  terms_days integer not null default 30
+);
+
+create table if not exists invoices (
+  id text primary key,
+  number text not null unique,
+  fy text not null,
+  date timestamptz not null,
+  kind text not null check (kind in ('shop','order')),
+  ref_id text not null,
+  ref_code text not null,
+  buyer_name text not null,
+  buyer_phone text,
+  buyer_gstin text,
+  buyer_state text not null,
+  buyer_address text,
+  intra boolean not null,
+  scheme text not null check (scheme in ('margin','normal')),
+  rate numeric(5,2) not null,
+  lines jsonb not null,
+  taxable numeric(12,2) not null,
+  cgst numeric(12,2) not null,
+  sgst numeric(12,2) not null,
+  igst numeric(12,2) not null,
+  total numeric(12,2) not null,
+  due_date timestamptz not null,
+  by_name text
+);
+create index if not exists invoices_date_idx on invoices(date desc);
+
+create table if not exists invoice_counters (
+  fy text primary key,
+  n integer not null
+);
+
+create table if not exists payments (
+  id text primary key,
+  invoice_id text not null references invoices(id) on delete cascade,
+  amount numeric(12,2) not null,
+  mode text not null,
+  reference text,
+  at timestamptz not null,
+  by_name text
+);
+create index if not exists payments_invoice_idx on payments(invoice_id);
+
 create sequence if not exists batch_code_seq start 1101;
 create sequence if not exists order_code_seq start 1040;
 create sequence if not exists sale_code_seq start 2201;
@@ -138,9 +191,17 @@ alter table machine_events enable row level security;
 alter table sales enable row level security;
 alter table returns enable row level security;
 alter table activity enable row level security;
+alter table buyers enable row level security;
+alter table invoices enable row level security;
+alter table invoice_counters enable row level security;
+alter table payments enable row level security;
 `;
 
 export const TABLES_IN_DELETE_ORDER = [
+  "payments",
+  "invoices",
+  "invoice_counters",
+  "buyers",
   "returns",
   "sales",
   "order_items",

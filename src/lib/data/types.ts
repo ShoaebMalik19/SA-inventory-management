@@ -112,7 +112,7 @@ export type Activity = {
   id: string;
   at: string;
   text: string;
-  kind: "batch" | "check" | "order" | "dispatch" | "sale" | "repair" | "return" | "move" | "staff";
+  kind: "batch" | "check" | "order" | "dispatch" | "sale" | "repair" | "return" | "move" | "staff" | "payment" | "settings";
   by?: string;
 };
 
@@ -141,3 +141,77 @@ export type Staff = {
 /** The single "spec" a buyer thinks in: i5 8th gen · 8GB · 256GB. */
 export const specKey = (m: Pick<Machine, "type" | "cpu" | "gen" | "ram" | "storage">) =>
   `${m.type}|${m.cpu}|${m.gen}|${m.ram}|${m.storage}`;
+
+/* ---------------- Billing ---------------- */
+
+export type BusinessSettings = {
+  businessName: string;
+  address: string;
+  phone: string;
+  gstin: string;
+  state: string;
+  invoicePrefix: string;
+  gstScheme: "margin" | "normal";
+  gstRate: number;
+  warrantyMonths: number;
+  bankDetails: string;
+  invoiceNote: string;
+};
+
+export type Buyer = {
+  id: string;
+  name: string;
+  phone?: string;
+  gstin?: string;
+  state: string;
+  address?: string;
+  termsDays: number;
+};
+
+export type InvoiceLine = {
+  machineId: string;
+  serial: string;
+  description: string;
+  hsn: string;
+  amount: number; // selling price incl. GST
+  purchase?: number; // our buying price — only for margin scheme maths; hidden from counter/technician
+};
+
+export type Invoice = {
+  id: string;
+  number: string; // "SA/26-27/0012"
+  fy: string;
+  date: string;
+  kind: "shop" | "order";
+  refId: string;
+  refCode: string; // SS-2231 / BO-1046
+  buyerName: string;
+  buyerPhone?: string;
+  buyerGstin?: string;
+  buyerState: string;
+  buyerAddress?: string;
+  intra: boolean;
+  scheme: "margin" | "normal";
+  rate: number;
+  lines: InvoiceLine[];
+  taxable: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  total: number;
+  dueDate: string;
+  by?: string;
+};
+
+export type PaymentMode = "Cash" | "UPI" | "Card" | "Bank transfer" | "Cheque";
+export const PAYMENT_MODES: PaymentMode[] = ["Cash", "UPI", "Card", "Bank transfer", "Cheque"];
+
+export type Payment = {
+  id: string;
+  invoiceId: string;
+  amount: number;
+  mode: PaymentMode;
+  reference?: string;
+  at: string;
+  by?: string;
+};

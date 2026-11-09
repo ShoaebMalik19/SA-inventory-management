@@ -3,6 +3,10 @@ import type { Q } from "./db";
 import type {
   Activity,
   Batch,
+  Buyer,
+  BusinessSettings,
+  Invoice,
+  Payment,
   BigOrder,
   HistoryEvent,
   Machine,
@@ -23,6 +27,10 @@ export type Snapshot = {
   returns: ReturnRecord[];
   activity: Activity[];
   staff: Staff[];
+  settings: BusinessSettings;
+  buyers: Buyer[];
+  invoices: Invoice[];
+  payments: Payment[];
 };
 
 /** Changes sent back after an action; the browser merges them in by id. */
@@ -183,6 +191,8 @@ export async function staffList(q: Q): Promise<Staff[]> {
 }
 
 export async function loadSnapshot(q: Q): Promise<Snapshot> {
+  const { getSettings, listBuyers, invoicesByIds, paymentsFor } = await import("./billing");
+  const [settings, buyers, invoices, payments] = [await getSettings(q), await listBuyers(q), await invoicesByIds(q), await paymentsFor(q)];
   const [mRows, hist, batches, orders, sales, returns, activity, staff] = await Promise.all([
     q.query<Row>("select * from machines"),
     historyFor(q),
@@ -201,6 +211,10 @@ export async function loadSnapshot(q: Q): Promise<Snapshot> {
     returns: returns.map(toReturn),
     activity: activity.map(toActivity),
     staff,
+    settings,
+    buyers,
+    invoices,
+    payments,
   };
 }
 
@@ -212,5 +226,14 @@ export function forRole<T extends Partial<Snapshot>>(data: T, role: Role): T {
   if (out.machines) out.machines = out.machines.map((m) => ({ ...m, cost: 0, repairCost: 0 }));
   if (out.batches) out.batches = out.batches.map((b) => ({ ...b, totalCost: 0 }));
   if (out.orders) out.orders = out.orders.map((o) => ({ ...o, unitPrice: 0 }));
+  // shop bills only, without our buying prices; no buyer list
+  if (out.invoices) out.invoices = out.invoices
+      .filter((i) => i.kind === "shop")
+      .map((i) => ({ ...i, lines: i.lines.map((l) => ({ ...l, purchase: undefined })) }));
+  if (out.payments && out.invoices) {
+    const ids = new Set(out.invoices.map((i) => i.id));
+    out.payments = out.payments.filter((p) => ids.has(p.invoiceId));
+  } else delete out.payments;
+  delete out.buyers;
   return out;
 }

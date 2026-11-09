@@ -1,4 +1,4 @@
-import type { Batch, Grade, Machine, Requirement, Stage } from "./types";
+import type { Batch, Grade, Invoice, Machine, Payment, Requirement, Stage } from "./types";
 import { specKey, STAGE_ORDER } from "./types";
 
 const GRADE_RANK: Record<Grade, number> = { A: 0, B: 1, C: 2 };
@@ -140,3 +140,38 @@ export const specLabel = (s: { cpu: string; gen: number; ram: number; storage: n
   `${s.cpu.replace("Core ", "")} ${s.gen}th gen · ${s.ram} GB · ${s.storage} GB`;
 
 export const isOlderThan = (m: Machine, days: number) => new Date(m.addedAt).getTime() < Date.now() - days * 86_400_000;
+
+/* ---------------- Money ---------------- */
+
+
+export type InvoiceStatus = "paid" | "part" | "unpaid" | "overdue";
+
+export function invoiceMoney(inv: Invoice, payments: Payment[]) {
+  const paid = Math.round(payments.filter((p) => p.invoiceId === inv.id).reduce((s, p) => s + p.amount, 0) * 100) / 100;
+  const balance = Math.max(0, Math.round((inv.total - paid) * 100) / 100);
+  const overdueDays = balance > 0.5 ? Math.floor((Date.now() - new Date(inv.dueDate).getTime()) / 86_400_000) : 0;
+  const status: InvoiceStatus = balance <= 0.5 ? "paid" : overdueDays > 0 ? "overdue" : paid > 0 ? "part" : "unpaid";
+  return { paid, balance, overdueDays: Math.max(0, overdueDays), status };
+}
+
+/** Money still to come in, per buyer, oldest due first. */
+export function moneyToCollect(invoices: Invoice[], payments: Payment[]) {
+  const byBuyer = new Map<string, { buyer: string; balance: number; overdue: number; oldestDue: string; invoices: (Invoice & ReturnType<typeof invoiceMoney>)[] }>();
+  for (const inv of invoices) {
+    const m = invoiceMoney(inv, payments);
+    if (m.balance <= 0.5) continue;
+    const row = byBuyer.get(inv.buyerName) ?? { buyer: inv.buyerName, balance: 0, overdue: 0, oldestDue: inv.dueDate, invoices: [] };
+    row.balance += m.balance;
+    if (m.status === "overdue") row.overdue += m.balance;
+    if (inv.dueDate < row.oldestDue) row.oldestDue = inv.dueDate;
+    row.invoices.push({ ...inv, ...m });
+    byBuyer.set(inv.buyerName, row);
+  }
+  const rows = [...byBuyer.values()].sort((a, b) => b.overdue - a.overdue || b.balance - a.balance);
+  rows.forEach((r) => r.invoices.sort((a, b) => a.dueDate.localeCompare(b.dueDate)));
+  return {
+    rows,
+    total: rows.reduce((s, r) => s + r.balance, 0),
+    overdue: rows.reduce((s, r) => s + r.overdue, 0),
+  };
+}

@@ -3,9 +3,12 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
-import { CheckCircle2, CircleAlert, Download, PackageCheck, Plus, Truck, XCircle } from "lucide-react";
+import Link from "next/link";
+import { CheckCircle2, CircleAlert, Download, FileText, PackageCheck, Plus, Truck, XCircle } from "lucide-react";
+import { invoiceMoney, pickForRequirement } from "@/lib/data/selectors";
+import { MoneyPill } from "@/components/money-pill";
+import { BuyerFields, type BuyerDraft } from "@/components/buyer-form";
 import { useStore } from "@/lib/data/store";
-import { pickForRequirement } from "@/lib/data/selectors";
 import type { BigOrder, Machine, Requirement } from "@/lib/data/types";
 import { PageHeader } from "@/components/page-header";
 import { Sheet } from "@/components/ui/sheet";
@@ -59,6 +62,8 @@ export function OrdersView({ prefill }: { prefill?: Requirement }) {
   const cancelOrder = useStore((s) => s.cancelOrder);
   const [creating, setCreating] = useState(!!prefill);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const invoices = useStore((s) => s.invoices);
+  const payments = useStore((s) => s.payments);
 
   const byId = useMemo(() => new Map(machines.map((m) => [m.id, m])), [machines]);
   const sorted = [...orders].sort((a, b) => (a.status === "booked" ? -1 : 0) - (b.status === "booked" ? -1 : 0) || b.createdAt.localeCompare(a.createdAt));
@@ -134,6 +139,22 @@ export function OrdersView({ prefill }: { prefill?: Requirement }) {
                 <Button variant="outline" size="sm" onClick={() => downloadSerialList(o, machines)}>
                   <Download /> Serial list (Excel)
                 </Button>
+                {(() => {
+                  const inv = invoices.find((i) => i.refId === o.id);
+                  if (!inv) return null;
+                  const m = invoiceMoney(inv, payments);
+                  return (
+                    <>
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/invoices/${inv.id}`}>
+                          <FileText /> Invoice {inv.number}
+                        </Link>
+                      </Button>
+                      <MoneyPill status={m.status} overdueDays={m.overdueDays} className="self-center" />
+                      {m.balance > 0.5 && <span className="self-center text-sm text-ink-2">{rupees(m.balance)} to collect</span>}
+                    </>
+                  );
+                })()}
                 {o.status === "booked" && (
                   <>
                     <Button
@@ -144,7 +165,9 @@ export function OrdersView({ prefill }: { prefill?: Requirement }) {
                         const res = await dispatchOrder(o.id);
                         setBusyId(null);
                         if (!res.ok) return toast.error(res.error);
-                        toast.success(`${o.code} dispatched to ${o.buyer}`, { description: `${o.machineIds.length} machines marked as sold.` });
+                        toast.success(`${o.code} dispatched to ${o.buyer}`, {
+                          description: `Invoice ${res.invoiceNumber} made. ${o.machineIds.length} machines marked as sold.`,
+                        });
                       }}
                     >
                       <PackageCheck /> Mark as dispatched
@@ -182,11 +205,14 @@ export function OrdersView({ prefill }: { prefill?: Requirement }) {
 
 function NewOrderForm({ initial, onDone }: { initial: Requirement; onDone: () => void }) {
   const machines = useStore((s) => s.machines);
-  const orders = useStore((s) => s.orders);
   const createOrder = useStore((s) => s.createOrder);
-  const buyers = useMemo(() => [...new Set(orders.map((o) => o.buyer))], [orders]);
+  const buyerList = useStore((s) => s.buyers);
+  const [buyer, setBuyer] = useState(buyerList[0]?.name ?? "");
+  const settings = useStore((s) => s.settings);
+  const buyers = useMemo(() => buyerList.map((b) => b.name), [buyerList]);
+  const known = buyerList.find((b) => b.name.toLowerCase() === buyer.trim().toLowerCase());
+  const [details, setDetails] = useState<BuyerDraft>({ name: "", state: settings?.state ?? "Karnataka", termsDays: 30 });
 
-  const [buyer, setBuyer] = useState(buyers[0] ?? "");
   const [need, setNeed] = useState<Requirement>(initial);
   const [unitPrice, setUnitPrice] = useState<number | "">(17500);
   const [busy, setBusy] = useState(false);
@@ -213,6 +239,17 @@ function NewOrderForm({ initial, onDone }: { initial: Requirement; onDone: () =>
             ))}
           </datalist>
         </Field>
+        {buyer.trim() && !known && (
+          <div className="rounded-2xl border border-dashed border-brand/40 bg-brand-soft/40 p-4">
+            <p className="mb-3 text-sm font-semibold text-brand-deep">New buyer — these details go on their invoices</p>
+            <BuyerFields value={details} onChange={setDetails} />
+          </div>
+        )}
+        {known && (
+          <p className="-mt-2 text-[13px] text-ink-3">
+            {known.state} · pays in {known.termsDays} days{known.gstin ? ` · GSTIN ${known.gstin}` : ""}
+          </p>
+        )}
         <RequirementFields need={need} onChange={setNeed} className="sm:grid-cols-2" />
         <Field label="Price per machine (₹)">
           <Input type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value === "" ? "" : +e.target.value)} />
@@ -264,7 +301,12 @@ function NewOrderForm({ initial, onDone }: { initial: Requirement; onDone: () =>
           disabled={!canBook || busy}
           onClick={async () => {
             setBusy(true);
-            const res = await createOrder(buyer.trim(), { ...need, qty: picked.length }, unitPrice || 0);
+            const res = await createOrder(
+              buyer.trim(),
+              { ...need, qty: picked.length },
+              unitPrice || 0,
+              known ? undefined : { ...details, name: buyer.trim() },
+            );
             setBusy(false);
             if (!res.ok) return toast.error(res.error);
             toast.success(`${res.orderCode} booked — ${picked.length} machines set aside for ${buyer.trim()}`, {

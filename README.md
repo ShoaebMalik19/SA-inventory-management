@@ -46,12 +46,17 @@ only this app's server talks to the database.
 | Ready stock | Ready machines by spec × grade, plus "A buyer is asking — can you fill it?" |
 | Check & grade | Test → battery → upgrade → grade → wipe. Opens the next machine automatically. Repairs too |
 | Add stock | New purchase batch from an Excel sheet (any column order, bad rows flagged) or by scanning serials |
-| Big orders | Auto-picks machines (closest spec, oldest stock, no MacBooks), books them, Excel serial list, dispatch |
-| Shop sale | Sells one machine, blocks machines booked for big orders, prints a warranty slip |
+| Big orders | Auto-picks machines (closest spec, oldest stock, no MacBooks), books them, Excel serial list, dispatch — dispatch makes the GST invoice |
+| Shop sale | Sells one machine, blocks machines booked for big orders, records cash/UPI/card, prints the GST bill with warranty |
+| Invoices | Every bill with FY numbering (SA/26-27/0001), printable A4 GST invoice, serial list annexure, monthly Excel for the accountant |
+| Money to collect | What each buyer still owes, overdue first, record payments as they come in |
 | Returns & warranty | Warranty check by serial, record a return with reason and refund — the machine goes back to checking |
 | Labels | Printable labels with a real Code-128 barcode of the serial, for one machine or a whole batch |
 | Batches | Money back, profit so far and expected profit for every purchase batch |
 | Staff | Add people, set roles and PINs, switch off access |
+| Settings | Shop name, address, GSTIN, state, invoice prefix, GST scheme (margin or normal), rate, warranty |
+
+**GST:** second-hand laptops are billed under the margin scheme (Rule 32(5)) by default, so tax is only on the selling price minus the buying price. Prices include GST. Buyers in Karnataka get CGST + SGST; buyers in other states get IGST. The working is shown to owner and manager only and never printed. Ask the shop's accountant to confirm the scheme before the first real bill.
 
 ## How it's built
 

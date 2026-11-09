@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { Suspense } from "react";
 import { AppShell } from "@/components/app-shell";
 
 export const metadata: Metadata = {
@@ -15,7 +16,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en-IN" className="h-full antialiased">
       <body className="min-h-full">
-        <AppShell>{children}</AppShell>
+        {/* the app reads the address bar (current page, invoice id) in the browser */}
+        <Suspense>
+          <AppShell>{children}</AppShell>
+        </Suspense>
       </body>
     </html>
   );

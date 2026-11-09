@@ -4,6 +4,11 @@ import { create } from "zustand";
 import type {
   Activity,
   Batch,
+  Buyer,
+  BusinessSettings,
+  Invoice,
+  Payment,
+  PaymentMode,
   BigOrder,
   Grade,
   Location,
@@ -17,7 +22,7 @@ import type {
 } from "./types";
 import * as api from "@/server/actions";
 import type { Patch } from "@/server/repo";
-import type { CheckInput, NewMachine } from "@/server/service";
+import type { BuyerInput, CheckInput, NewMachine } from "@/server/service";
 
 /**
  * Browser-side cache of what the server sent. Screens read from here.
@@ -40,6 +45,10 @@ type State = {
   returns: ReturnRecord[];
   activity: Activity[];
   staff: Staff[];
+  settings: BusinessSettings | null;
+  buyers: Buyer[];
+  invoices: Invoice[];
+  payments: Payment[];
   lastSync: number;
 };
 
@@ -52,16 +61,39 @@ type Actions = {
   finishRepair: (id: string, part: string, cost: number, grade: Grade) => Promise<{ ok: true } | Fail>;
   moveMachines: (ids: string[], to: Location) => Promise<{ ok: true } | Fail>;
   setPrice: (id: string, price: number) => Promise<{ ok: true } | Fail>;
-  createOrder: (buyer: string, need: Requirement, unitPrice: number) => Promise<{ ok: true; orderCode: string } | Fail>;
-  dispatchOrder: (id: string) => Promise<{ ok: true } | Fail>;
+  createOrder: (buyer: string, need: Requirement, unitPrice: number, buyerDetails?: BuyerInput) => Promise<{ ok: true; orderCode: string } | Fail>;
+  dispatchOrder: (id: string) => Promise<{ ok: true; invoiceNumber: string } | Fail>;
   cancelOrder: (id: string) => Promise<{ ok: true } | Fail>;
-  shopSell: (i: { machineId: string; customer: string; phone: string; price: number; warrantyMonths: number }) => Promise<{ ok: true; sale: ShopSale } | Fail>;
+  shopSell: (i: {
+    machineId: string;
+    customer: string;
+    phone: string;
+    price: number;
+    warrantyMonths: number;
+    paymentMode: PaymentMode;
+    reference?: string;
+  }) => Promise<{ ok: true; sale: ShopSale; invoiceId: string } | Fail>;
+  recordPayment: (i: { invoiceId: string; amount: number; mode: PaymentMode; reference?: string }) => Promise<{ ok: true } | Fail>;
+  saveBuyer: (b: BuyerInput & { id?: string }) => Promise<{ ok: true } | Fail>;
+  saveSettings: (s: BusinessSettings) => Promise<{ ok: true } | Fail>;
   recordReturn: (machineId: string, reason: string, refund: number) => Promise<{ ok: true; ret: ReturnRecord } | Fail>;
   saveStaff: (s: { id?: string; name: string; role: Role; pin?: string; active: boolean }) => Promise<{ ok: true } | Fail>;
   resetDemo: () => Promise<{ ok: true } | Fail>;
 };
 
-const EMPTY = { machines: [], batches: [], orders: [], sales: [], returns: [], activity: [], staff: [] };
+const EMPTY = {
+  machines: [],
+  batches: [],
+  orders: [],
+  sales: [],
+  returns: [],
+  activity: [],
+  staff: [],
+  settings: null,
+  buyers: [],
+  invoices: [],
+  payments: [],
+};
 
 function merge<T extends { id: string }>(list: T[], updates: T[] | undefined, prepend = false): T[] {
   if (!updates?.length) return list;
@@ -117,6 +149,10 @@ export const useStore = create<State & Actions>()((set, get) => {
         returns: merge(s.returns, p.returns, true),
         activity: merge(s.activity, p.activity, true),
         staff: p.staff ?? s.staff,
+        settings: p.settings ?? s.settings,
+        buyers: p.buyers ?? s.buyers,
+        invoices: merge(s.invoices, p.invoices, true),
+        payments: merge(s.payments, p.payments),
       }));
     },
 
@@ -130,13 +166,14 @@ export const useStore = create<State & Actions>()((set, get) => {
     finishRepair: (id, part, cost, grade) => call(() => api.finishRepair({ id, part, cost, grade })),
     moveMachines: (ids, to) => call(() => api.moveMachines({ ids, to })),
     setPrice: (id, price) => call(() => api.setPrice({ id, price })),
-    createOrder: (buyer, need, unitPrice) => call(() => api.createOrder({ buyer, need, unitPrice })),
+    createOrder: (buyer, need, unitPrice, buyerDetails) => call(() => api.createOrder({ buyer, need, unitPrice, buyerDetails })),
     dispatchOrder: (id) => call(() => api.dispatchOrder(id)),
     cancelOrder: (id) => call(() => api.cancelOrder(id)),
     shopSell: async (i) => {
       const res = await call(() => api.shopSell(i));
       if (!res.ok) return res;
-      return { ok: true, sale: (res as { patch: Patch }).patch.sales![0] };
+      const r = res as { patch: Patch; invoiceId: string };
+      return { ok: true, sale: r.patch.sales![0], invoiceId: r.invoiceId };
     },
     recordReturn: async (machineId, reason, refund) => {
       const res = await call(() => api.recordReturn({ machineId, reason, refund }));
@@ -144,6 +181,9 @@ export const useStore = create<State & Actions>()((set, get) => {
       return { ok: true, ret: (res as { patch: Patch }).patch.returns![0] };
     },
     saveStaff: (s) => call(() => api.saveStaff(s)),
+    recordPayment: (i) => call(() => api.recordPayment(i)),
+    saveBuyer: (b) => call(() => api.saveBuyer(b)),
+    saveSettings: (s) => call(() => api.saveSettings(s)),
     resetDemo: () => call(() => api.resetDemoData()),
   };
 });

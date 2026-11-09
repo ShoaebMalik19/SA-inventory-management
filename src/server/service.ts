@@ -26,6 +26,21 @@ import type {
 } from "@/lib/data/types";
 import { hashPin } from "./pin";
 import { insertMany } from "./seed-db";
+import {
+  addPayment,
+  buyerByName,
+  createInvoice,
+  getSettings,
+  invoicesByIds,
+  listBuyers,
+  machinesForInvoice,
+  paymentsFor,
+  putSettings,
+  upsertBuyer,
+} from "./billing";
+import type { BusinessSettings, PaymentMode } from "@/lib/data/types";
+import { PAYMENT_MODES } from "@/lib/data/types";
+import { STATES } from "@/lib/gst";
 
 /**
  * All business rules live here, run inside one database transaction per action.
@@ -249,8 +264,27 @@ export async function setPrice(q: Q, by: Staff, a: { id: string; price: number }
 
 /* ---------------- Big orders ---------------- */
 
-export async function createOrder(q: Q, by: Staff, a: { buyer: string; need: Requirement; unitPrice: number }): Promise<Patch & { orderCode: string }> {
+export type BuyerInput = { name: string; phone?: string; gstin?: string; state: string; address?: string; termsDays: number };
+
+function checkBuyer(b: BuyerInput) {
+  if (!b.name.trim()) throw new UserError("Enter the buyer's name.");
+  if (!STATES.some((s) => s.name === b.state)) throw new UserError("Pick the buyer's state.");
+  if (b.gstin && !/^[0-9]{2}[A-Z0-9]{13}$/i.test(b.gstin.trim())) throw new UserError("A GSTIN has 15 letters and digits, starting with the state code.");
+  if (!(b.termsDays >= 0 && b.termsDays <= 180)) throw new UserError("Payment terms must be between 0 and 180 days.");
+}
+
+export async function createOrder(
+  q: Q,
+  by: Staff,
+  a: { buyer: string; need: Requirement; unitPrice: number; buyerDetails?: BuyerInput },
+): Promise<Patch & { orderCode: string }> {
   if (!a.buyer.trim()) throw new UserError("Enter the buyer's name.");
+  const known = await buyerByName(q, a.buyer);
+  if (!known) {
+    const details = a.buyerDetails ?? { name: a.buyer, state: (await getSettings(q)).state, termsDays: 30 };
+    checkBuyer({ ...details, name: a.buyer });
+    await upsertBuyer(q, { ...details, name: a.buyer.trim() });
+  }
   if (!(a.unitPrice > 0)) throw new UserError("Enter the price per machine.");
   // lock the ready stock so two people can't book the same machines
   const ready = await q.query<{ id: string }>("select id from machines where stage = 'ready' for update");
@@ -275,13 +309,14 @@ export async function createOrder(q: Q, by: Staff, a: { buyer: string; need: Req
   const act = await activity(q, `Big order ${code} booked: ${ids.length} machines for ${a.buyer.trim()}`, "order", by);
   return {
     orderCode: code,
+    buyers: await listBuyers(q),
     orders: await ordersByIds(q, [id]),
     machines: await machinesByIds(q, ids),
     activity: await activityByIds(q, [act]),
   };
 }
 
-export async function dispatchOrder(q: Q, by: Staff, a: { id: string }): Promise<Patch> {
+export async function dispatchOrder(q: Q, by: Staff, a: { id: string }): Promise<Patch & { invoiceNumber: string }> {
   const [o] = await ordersByIds(q, [a.id]);
   if (!o || o.status !== "booked") throw new UserError("This order is not waiting for dispatch.");
   await q.query("update orders set status='dispatched', dispatched_at=now() where id=$1", [a.id]);
@@ -290,8 +325,23 @@ export async function dispatchOrder(q: Q, by: Staff, a: { id: string }): Promise
     [o.machineIds, o.unitPrice, o.buyer],
   );
   await events(q, o.machineIds, `Dispatched to ${o.buyer} with ${o.code}`, "sold", by);
-  const act = await activity(q, `Big order ${o.code} dispatched to ${o.buyer}`, "dispatch", by);
+  const settings = await getSettings(q);
+  const buyer = (await buyerByName(q, o.buyer)) ?? { name: o.buyer, state: settings.state, termsDays: 30 };
+  const ms = await machinesForInvoice(q, o.machineIds);
+  const invoiceId = await createInvoice(q, {
+    kind: "order",
+    refId: o.id,
+    refCode: o.code,
+    buyer,
+    items: ms.map((m) => ({ machine: m, amount: o.unitPrice })),
+    byName: by.name,
+    settings,
+  });
+  const [inv] = await invoicesByIds(q, [invoiceId]);
+  const act = await activity(q, `Big order ${o.code} dispatched to ${o.buyer} — invoice ${inv.number}`, "dispatch", by);
   return {
+    invoiceNumber: inv.number,
+    invoices: [inv],
     orders: await ordersByIds(q, [a.id]),
     machines: await machinesByIds(q, o.machineIds),
     activity: await activityByIds(q, [act]),
@@ -317,8 +367,9 @@ export async function cancelOrder(q: Q, by: Staff, a: { id: string }): Promise<P
 export async function shopSell(
   q: Q,
   by: Staff,
-  a: { machineId: string; customer: string; phone: string; price: number; warrantyMonths: number },
-): Promise<Patch & { saleId: string }> {
+  a: { machineId: string; customer: string; phone: string; price: number; warrantyMonths: number; paymentMode: PaymentMode; reference?: string },
+): Promise<Patch & { saleId: string; invoiceId: string }> {
+  if (!PAYMENT_MODES.includes(a.paymentMode)) throw new UserError("Pick how the customer paid.");
   const m = await lockMachine(q, a.machineId);
   if (m.stage === "booked") {
     const [o] = await ordersByIds(q, [m.order_id as string]);
@@ -342,9 +393,24 @@ export async function shopSell(
     a.customer.trim(),
   ]);
   await event(q, a.machineId, `Sold at the shop to ${a.customer.trim()} (${code})`, "sold", by);
+  const settings = await getSettings(q);
+  const [mi] = await machinesForInvoice(q, [a.machineId]);
+  const invoiceId = await createInvoice(q, {
+    kind: "shop",
+    refId: id,
+    refCode: code,
+    buyer: { name: a.customer.trim(), phone: a.phone.trim(), state: settings.state, termsDays: 0 },
+    items: [{ machine: mi, amount: Math.round(a.price) }],
+    byName: by.name,
+    settings,
+  });
+  await addPayment(q, { invoiceId, amount: Math.round(a.price), mode: a.paymentMode, reference: a.reference, byName: by.name });
   const act = await activity(q, `Shop sale ${code}: ${m.brand} ${m.model} to ${a.customer.trim()}`, "sale", by);
   return {
     saleId: id,
+    invoiceId,
+    invoices: await invoicesByIds(q, [invoiceId]),
+    payments: await paymentsFor(q, [invoiceId]),
     sales: await salesByIds(q, [id]),
     machines: await machinesByIds(q, [a.machineId]),
     activity: await activityByIds(q, [act]),
@@ -401,4 +467,51 @@ export async function saveStaff(
   }
   await activity(q, a.id ? `Staff updated: ${a.name.trim()}` : `New staff added: ${a.name.trim()}`, "staff", by);
   return { staff: await staffList(q) };
+}
+
+/* ---------------- Money ---------------- */
+
+export async function recordPayment(
+  q: Q,
+  by: Staff,
+  a: { invoiceId: string; amount: number; mode: PaymentMode; reference?: string },
+): Promise<Patch> {
+  const [inv] = await invoicesByIds(q, [a.invoiceId]);
+  if (!inv) throw new UserError("This invoice doesn't exist.");
+  if (!PAYMENT_MODES.includes(a.mode)) throw new UserError("Pick how they paid.");
+  await q.query("select id from invoices where id = $1 for update", [a.invoiceId]);
+  const paid = (await paymentsFor(q, [a.invoiceId])).reduce((s, p) => s + p.amount, 0);
+  const balance = Math.round((inv.total - paid) * 100) / 100;
+  if (!(a.amount > 0)) throw new UserError("Enter the amount received.");
+  if (a.amount > balance + 0.5) throw new UserError(`Only ${rs(balance)} is due on this invoice.`);
+  await addPayment(q, { invoiceId: a.invoiceId, amount: a.amount, mode: a.mode, reference: a.reference, byName: by.name });
+  const act = await activity(q, `${rs(a.amount)} received from ${inv.buyerName} against ${inv.number} (${a.mode})`, "payment", by);
+  return { payments: await paymentsFor(q, [a.invoiceId]), activity: await activityByIds(q, [act]) };
+}
+
+export async function saveSettings(q: Q, by: Staff, s: BusinessSettings): Promise<Patch> {
+  if (!s.businessName.trim()) throw new UserError("Enter the business name.");
+  if (s.gstin && !/^[0-9]{2}[A-Z0-9]{13}$/i.test(s.gstin.trim())) throw new UserError("A GSTIN has 15 letters and digits, starting with the state code.");
+  if (!STATES.some((x) => x.name === s.state)) throw new UserError("Pick the shop's state.");
+  if (!/^[A-Z0-9-]{1,6}$/i.test(s.invoicePrefix.trim())) throw new UserError("Invoice prefix: up to 6 letters or digits, like SA.");
+  if (![5, 12, 18, 28].includes(Number(s.gstRate))) throw new UserError("GST rate must be 5, 12, 18 or 28%.");
+  const clean: BusinessSettings = {
+    ...s,
+    businessName: s.businessName.trim(),
+    gstin: s.gstin.trim().toUpperCase(),
+    invoicePrefix: s.invoicePrefix.trim().toUpperCase(),
+    gstRate: Number(s.gstRate),
+    warrantyMonths: Math.max(0, Math.min(24, Math.round(Number(s.warrantyMonths) || 0))),
+  };
+  await putSettings(q, clean);
+  await activity(q, "Business settings updated", "settings", by);
+  return { settings: clean };
+}
+
+export async function saveBuyer(q: Q, by: Staff, b: BuyerInput & { id?: string }): Promise<Patch> {
+  checkBuyer(b);
+  const clash = await buyerByName(q, b.name);
+  if (clash && clash.id !== b.id) throw new UserError("A buyer with this name already exists.");
+  await upsertBuyer(q, b);
+  return { buyers: await listBuyers(q) };
 }

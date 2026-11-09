@@ -88,6 +88,9 @@ export async function loadSampleData(q: Q) {
   await q.query(`select setval('order_code_seq', $1)`, [maxCode(d.orders.map((o) => o.code), 1039)]);
   await q.query(`select setval('sale_code_seq', $1)`, [maxCode(d.sales.map((s) => s.code), 2200)]);
   await q.query(`select setval('return_code_seq', 3000)`);
+  // invoices, payments and buyers for the sample sales
+  const { backfillBilling } = await import("./billing");
+  await backfillBilling(q);
 }
 
 /** First start: create the session secret, the demo staff and the sample stock. */

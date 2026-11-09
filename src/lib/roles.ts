@@ -9,6 +9,8 @@ export const PERMISSIONS = {
   sell: ["owner", "manager", "counter"],
   returns: ["owner", "manager", "counter"],
   move: ["owner", "manager", "technician", "counter"],
+  billing: ["owner", "manager"],
+  settings: ["owner"],
   staff: ["owner"],
   reset: ["owner"],
 } as const satisfies Record<string, readonly Role[]>;
@@ -25,10 +27,10 @@ export const ROLE_LABEL: Record<Role, string> = {
 };
 
 export const ROLE_HINT: Record<Role, string> = {
-  owner: "Everything, including money, staff and settings",
-  manager: "Everything except staff and settings",
+  owner: "Everything, including money, invoices, staff and settings",
+  manager: "Everything except staff and settings, including invoices and payments",
   technician: "Add stock, check & grade, move machines, print labels",
-  counter: "Shop sales, returns, look up stock",
+  counter: "Shop sales and bills, returns, look up stock",
 };
 
 /** Pages each role can open. Home for technician/counter is their main job screen. */
@@ -44,6 +46,9 @@ export const PAGE_ACCESS: Record<string, readonly Role[]> = {
   "/batches": PERMISSIONS.viewMoney,
   "/labels": ["owner", "manager", "technician", "counter"],
   "/staff": PERMISSIONS.staff,
+  "/invoices": ["owner", "manager", "counter"],
+  "/money": PERMISSIONS.billing,
+  "/settings": PERMISSIONS.settings,
 };
 
 export const HOME_FOR: Record<Role, string> = {

@@ -7,7 +7,7 @@ import * as svc from "./service";
 import { loadSampleData } from "./seed-db";
 import { verifyPin } from "./pin";
 import type { Permission } from "@/lib/roles";
-import type { Grade, Location, Requirement, Role, SupplierType } from "@/lib/data/types";
+import type { BusinessSettings, Grade, Location, PaymentMode, Requirement, Role, SupplierType } from "@/lib/data/types";
 
 /**
  * The only door into the database from the browser.
@@ -24,8 +24,8 @@ async function run<X extends object>(
     const user = await requireUser(permission);
     const db = await getDb();
     const out = await db.tx((q) => fn(q, user));
-    const { machines, batches, orders, sales, returns, activity, staff, replaceAll, ...extra } = out;
-    const patch = forRole({ machines, batches, orders, sales, returns, activity, staff }, user.role);
+    const { machines, batches, orders, sales, returns, activity, staff, settings, buyers, invoices, payments, replaceAll, ...extra } = out;
+    const patch = forRole({ machines, batches, orders, sales, returns, activity, staff, settings, buyers, invoices, payments }, user.role);
     return { ok: true, patch: { ...patch, replaceAll: replaceAll ? forRole(replaceAll, user.role) : undefined }, ...(extra as X) };
   } catch (e) {
     if (e instanceof svc.UserError || e instanceof NotAllowed) return { ok: false, error: e.message };
@@ -81,7 +81,7 @@ export async function setPrice(input: { id: string; price: number }) {
 
 /* ---- selling ---- */
 
-export async function createOrder(input: { buyer: string; need: Requirement; unitPrice: number }) {
+export async function createOrder(input: { buyer: string; need: Requirement; unitPrice: number; buyerDetails?: svc.BuyerInput }) {
   return run("orders", (q, u) => svc.createOrder(q, u, input));
 }
 
@@ -93,7 +93,15 @@ export async function cancelOrder(id: string) {
   return run("orders", (q, u) => svc.cancelOrder(q, u, { id }));
 }
 
-export async function shopSell(input: { machineId: string; customer: string; phone: string; price: number; warrantyMonths: number }) {
+export async function shopSell(input: {
+  machineId: string;
+  customer: string;
+  phone: string;
+  price: number;
+  warrantyMonths: number;
+  paymentMode: PaymentMode;
+  reference?: string;
+}) {
   return run("sell", (q, u) => svc.shopSell(q, u, input));
 }
 
@@ -117,4 +125,18 @@ export async function resetDemoData() {
 /** Who am I — used after login. */
 export async function whoAmI() {
   return currentUser();
+}
+
+/* ---- money ---- */
+
+export async function recordPayment(input: { invoiceId: string; amount: number; mode: PaymentMode; reference?: string }) {
+  return run("billing", (q, u) => svc.recordPayment(q, u, input));
+}
+
+export async function saveBuyer(input: svc.BuyerInput & { id?: string }) {
+  return run("billing", (q, u) => svc.saveBuyer(q, u, input));
+}
+
+export async function saveSettings(input: BusinessSettings) {
+  return run("settings", (q, u) => svc.saveSettings(q, u, input));
 }

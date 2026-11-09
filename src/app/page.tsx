@@ -5,6 +5,8 @@ import { useMemo } from "react";
 import { motion } from "motion/react";
 import {
   AlertTriangle,
+  IndianRupee,
+  Settings,
   ArrowLeftRight,
   Undo2,
   Users,
@@ -19,6 +21,7 @@ import {
 import { useStore } from "@/lib/data/store";
 import {
   agingStock,
+  moneyToCollect,
   salesInLast,
   specLabel,
   specMatrix,
@@ -49,12 +52,17 @@ const ACTIVITY_ICON: Record<Activity["kind"], typeof Truck> = {
   return: Undo2,
   move: ArrowLeftRight,
   staff: Users,
+  payment: IndianRupee,
+  settings: Settings,
 };
 
 export default function HomePage() {
   const machines = useStore((s) => s.machines);
   const orders = useStore((s) => s.orders);
   const activity = useStore((s) => s.activity);
+  const invoices = useStore((s) => s.invoices);
+  const payments = useStore((s) => s.payments);
+  const dues = useMemo(() => moneyToCollect(invoices, payments), [invoices, payments]);
 
   const d = useMemo(() => {
     const counts = stageCounts(machines);
@@ -145,7 +153,7 @@ export default function HomePage() {
       </section>
 
       {/* Money in the last 30 days */}
-      <section className="mt-5 grid overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface sm:grid-cols-3">
+      <section className="mt-5 grid overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface sm:grid-cols-2 lg:grid-cols-4">
         <Figure label="Sold in the last 30 days" value={rupeesShort(d.month.revenue)} note={`${count(d.month.units)} machines`} />
         <Figure
           label="Profit in the last 30 days"
@@ -153,6 +161,14 @@ export default function HomePage() {
           note={`${Math.round((d.month.profit / Math.max(d.month.revenue, 1)) * 100)}% margin after repairs`}
           accent
         />
+        <Link href="/money" className="group">
+          <Figure
+            label="Money to collect"
+            value={rupeesShort(dues.total)}
+            note={dues.overdue > 0 ? `${rupeesShort(dues.overdue)} overdue — see who owes` : "Nothing overdue"}
+            danger={dues.overdue > 0}
+          />
+        </Link>
         <Figure
           label="Booked for big orders"
           value={`${count(d.counts.booked)} machines`}
@@ -186,6 +202,15 @@ export default function HomePage() {
               title={`${count(d.aging.length)} ready machines older than 60 days`}
               note={`${rupees(d.agingValue)} of your money is sitting on the shelf`}
             />
+            {dues.overdue > 0 && (
+              <Attention
+                href="/money"
+                icon={IndianRupee}
+                tone="scrap"
+                title={`${rupees(dues.overdue)} overdue from buyers`}
+                note={`${dues.rows.filter((r) => r.overdue > 0).map((r) => r.buyer).join(", ")} — past their payment date`}
+              />
+            )}
             {d.openOrders.map((o) => (
               <Attention
                 key={o.id}
@@ -258,11 +283,11 @@ export default function HomePage() {
   );
 }
 
-function Figure({ label, value, note, accent }: { label: string; value: string; note: string; accent?: boolean }) {
+function Figure({ label, value, note, accent, danger }: { label: string; value: string; note: string; accent?: boolean; danger?: boolean }) {
   return (
-    <div className="border-b border-line-soft p-5 last:border-0 sm:border-b-0 sm:border-r sm:p-6 sm:last:border-r-0">
+    <div className="h-full border-b border-line-soft p-5 sm:border-r sm:p-6 lg:border-b-0">
       <p className="text-[13.5px] font-semibold text-ink-2">{label}</p>
-      <p className={cn("font-display mt-2 text-[32px] font-bold leading-none", accent && "text-st-ready")}>{value}</p>
+      <p className={cn("font-display mt-2 text-[32px] font-bold leading-none", accent && "text-st-ready", danger && "text-st-scrap")}>{value}</p>
       <p className="mt-2 text-[13px] text-ink-3">{note}</p>
     </div>
   );

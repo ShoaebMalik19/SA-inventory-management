@@ -2,16 +2,18 @@
 
 import { useDeferredValue, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Ban, Printer, ScanLine, Store } from "lucide-react";
+import Link from "next/link";
+import { Ban, CheckCircle2, Printer, ScanLine, Store } from "lucide-react";
+import { can } from "@/lib/roles";
 import { useStore } from "@/lib/data/store";
-import type { Machine, ShopSale } from "@/lib/data/types";
+import { PAYMENT_MODES, type Machine, type PaymentMode, type ShopSale } from "@/lib/data/types";
 import { PageHeader } from "@/components/page-header";
 import { ScanButton } from "@/components/scan-button";
 import { Sheet } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/fields";
 import { GradeBadge, StagePill } from "@/components/stage";
-import { dateTime, ordinal, rupees, timeAgo } from "@/lib/format";
+import { ordinal, rupees, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export function SaleView({ initialId }: { initialId?: string }) {
@@ -26,8 +28,13 @@ export function SaleView({ initialId }: { initialId?: string }) {
   const [customer, setCustomer] = useState("");
   const [phone, setPhone] = useState("");
   const [price, setPrice] = useState<number | "">(() => machines.find((m) => m.id === initialId)?.price || "");
-  const [warranty, setWarranty] = useState(3);
-  const [receipt, setReceipt] = useState<ShopSale | null>(null);
+  const settings = useStore((s) => s.settings);
+  const role = useStore((s) => s.user?.role);
+  const invoices = useStore((s) => s.invoices);
+  const [warranty, setWarranty] = useState(settings?.warrantyMonths ?? 3);
+  const [mode, setMode] = useState<PaymentMode>("Cash");
+  const [reference, setReference] = useState("");
+  const [done, setDone] = useState<{ sale: ShopSale; invoiceId: string } | null>(null);
 
   const selected = selectedId ? machines.find((m) => m.id === selectedId) : undefined;
   const bookedOrder = selected?.stage === "booked" ? orders.find((o) => o.id === selected.orderId) : undefined;
@@ -54,11 +61,20 @@ export function SaleView({ initialId }: { initialId?: string }) {
   const sell = async () => {
     if (!selected) return;
     setBusy(true);
-    const res = await shopSell({ machineId: selected.id, customer: customer.trim(), phone: phone.trim(), price: price || 0, warrantyMonths: warranty });
+    const res = await shopSell({
+      machineId: selected.id,
+      customer: customer.trim(),
+      phone: phone.trim(),
+      price: price || 0,
+      warrantyMonths: warranty,
+      paymentMode: mode,
+      reference,
+    });
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
     toast.success(`Sold — ${selected.brand} ${selected.model} to ${customer.trim()}`);
-    setReceipt(res.sale);
+    setDone({ sale: res.sale, invoiceId: res.invoiceId });
+    setReference("");
     setSelectedId(null);
     setCustomer("");
     setPhone("");
@@ -187,7 +203,28 @@ export function SaleView({ initialId }: { initialId?: string }) {
                 ))}
               </div>
             </Field>
-            {selected && price && selected.stage === "ready" ? (
+            <Field label="Paid by">
+              <div className="flex flex-wrap gap-2">
+                {PAYMENT_MODES.filter((m) => m !== "Cheque").map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setMode(m)}
+                    className={cn(
+                      "h-10 rounded-[11px] border px-3.5 text-sm font-semibold",
+                      mode === m ? "border-brand bg-brand-soft text-brand-deep" : "border-line text-ink-2",
+                    )}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            {mode !== "Cash" && (
+              <Field label="Transaction ID (optional)">
+                <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="UPI / card reference" />
+              </Field>
+            )}
+            {selected && price && selected.stage === "ready" && can(role, "viewMoney") ? (
               <p className="rounded-xl bg-mist px-3.5 py-2.5 text-sm text-ink-2">
                 Profit on this sale:{" "}
                 <b className={cn(price - selected.cost - selected.repairCost >= 0 ? "text-st-ready" : "text-st-scrap")}>
@@ -218,63 +255,45 @@ export function SaleView({ initialId }: { initialId?: string }) {
                   </p>
                 </div>
                 <span className="font-semibold tabular-nums">{rupees(s.price)}</span>
-                <Button variant="ghost" size="icon" aria-label="Show warranty slip" onClick={() => setReceipt(s)}>
-                  <Printer />
-                </Button>
+                {(() => {
+                  const inv = invoices.find((i) => i.refId === s.id);
+                  return inv ? (
+                    <Button asChild variant="ghost" size="icon" aria-label="Open the bill">
+                      <Link href={`/invoices/${inv.id}`}>
+                        <Printer />
+                      </Link>
+                    </Button>
+                  ) : null;
+                })()}
               </li>
             );
           })}
         </ul>
       </section>
 
-      <Sheet open={!!receipt} onOpenChange={(o) => !o && setReceipt(null)} title="Warranty slip" side="center">
-        {receipt && <Slip sale={receipt} m={byId.get(receipt.machineId)} />}
-      </Sheet>
-    </div>
-  );
-}
-
-function Slip({ sale, m }: { sale: ShopSale; m?: Machine }) {
-  const until = new Date(new Date(sale.at).getTime() + sale.warrantyMonths * 30 * 86_400_000);
-  return (
-    <div className="p-5 pt-16">
-      <div className="print-area rounded-2xl border-2 border-ink p-5">
-        <div className="flex items-start justify-between border-b-2 border-dashed border-ink/25 pb-4">
-          <div>
-            <p className="font-display text-xl font-bold">S.A Computers</p>
-            <p className="text-[13px] text-ink-2">KHB Main Road, RT Nagar, Bengaluru</p>
-          </div>
-          <div className="text-right text-[13px]">
-            <p className="font-semibold">{sale.code}</p>
-            <p className="text-ink-2">{dateTime(sale.at)}</p>
-          </div>
-        </div>
-        <dl className="mt-4 space-y-2 text-[14.5px]">
-          {[
-            ["Customer", `${sale.customer}, ${sale.phone}`],
-            ["Machine", `${m?.brand} ${m?.model}`],
-            ["Spec", m ? `${m.cpu} ${ordinal(m.gen)} gen · ${m.ram} GB · ${m.storage} GB ${m.storageType}` : ""],
-            ["Serial number", m?.serial ?? ""],
-            ["Grade", m?.grade ?? ""],
-            ["Warranty", `${sale.warrantyMonths} months, until ${until.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}`],
-          ].map(([k, v]) => (
-            <div key={k} className="flex justify-between gap-4">
-              <dt className="text-ink-2">{k}</dt>
-              <dd className={cn("text-right font-semibold", k === "Serial number" && "font-mono")}>{v}</dd>
+      <Sheet open={!!done} onOpenChange={(o) => !o && setDone(null)} title="Sale complete" side="center">
+        {done && (
+          <div className="p-6 pt-14 text-center">
+            <span className="mx-auto grid size-14 place-items-center rounded-full bg-st-ready-bg text-st-ready">
+              <CheckCircle2 className="size-7" />
+            </span>
+            <h2 className="font-display mt-3 text-2xl font-bold">Sold to {done.sale.customer}</h2>
+            <p className="mt-1 text-ink-2">
+              {rupees(done.sale.price)} received by {mode}. The bill has the warranty on it.
+            </p>
+            <div className="mt-5 grid gap-2">
+              <Button asChild size="lg">
+                <Link href={`/invoices/${done.invoiceId}`}>
+                  <Printer /> Print the bill
+                </Link>
+              </Button>
+              <Button size="lg" variant="outline" onClick={() => setDone(null)}>
+                Next customer
+              </Button>
             </div>
-          ))}
-        </dl>
-        <div className="mt-4 flex items-baseline justify-between border-t-2 border-ink pt-3">
-          <span className="font-semibold">Amount paid</span>
-          <span className="font-display text-2xl font-bold">{rupees(sale.price)}</span>
-        </div>
-        <p className="mt-3 text-[12px] leading-relaxed text-ink-3">
-          Warranty covers hardware faults. Physical or liquid damage is not covered. Keep this slip for any claim.
-        </p>
-      </div>
-      <Button size="lg" className="mt-4 w-full" onClick={() => window.print()}>
-        <Printer /> Print warranty slip
-      </Button>
+          </div>
+        )}
+      </Sheet>
     </div>
   );
 }

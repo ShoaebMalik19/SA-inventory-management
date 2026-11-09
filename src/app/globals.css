@@ -126,3 +126,12 @@ body {
   .print-labels .label { break-inside: avoid; border-width: 1px; }
   @page { margin: 8mm; }
 }
+
+@media print {
+  .print-invoice, .print-invoice * { visibility: visible !important; }
+  .print-invoice {
+    position: absolute; left: 0; top: 0; width: 100%;
+    border: none !important; box-shadow: none !important; margin: 0 !important; padding: 0 !important;
+  }
+  .no-print { display: none !important; }
+}

@@ -70,6 +70,8 @@ export function getDb(): Promise<Db> {
       }
       const { ensureSeeded } = await import("./seed-db");
       await ensureSeeded(db);
+      const { ensureBilling } = await import("./billing");
+      await ensureBilling(db);
       return db;
     })().catch((e) => {
       g.__saDb = undefined;
