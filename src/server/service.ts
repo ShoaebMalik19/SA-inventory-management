@@ -25,6 +25,7 @@ import type {
   SupplierType,
 } from "@/lib/data/types";
 import { hashPin } from "./pin";
+import { insertMany } from "./seed-db";
 
 /**
  * All business rules live here, run inside one database transaction per action.
@@ -34,6 +35,7 @@ import { hashPin } from "./pin";
 export class UserError extends Error {}
 
 const uid = (p: string) => `${p}${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
+const now = () => new Date().toISOString();
 const rs = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
 
 async function event(q: Q, machineId: string, text: string, kind: HistoryEvent["kind"], by: Staff) {
@@ -43,6 +45,15 @@ async function event(q: Q, machineId: string, text: string, kind: HistoryEvent["
     kind,
     by.name,
   ]);
+}
+
+/** one history line for many machines in a single statement */
+async function events(q: Q, ids: string[], text: string, kind: HistoryEvent["kind"], by: Staff) {
+  if (!ids.length) return;
+  await q.query(
+    "insert into machine_events (machine_id, at, text, kind, by_name) select unnest($1::text[]), now(), $2, $3, $4",
+    [ids, text, kind, by.name],
+  );
 }
 
 async function activity(q: Q, text: string, kind: Activity["kind"], by: Staff) {
@@ -104,19 +115,19 @@ export async function addBatch(
     "insert into batches (id, code, supplier, supplier_type, date, total_cost, count) values ($1,$2,$3,$4,now(),$5,$6)",
     [batchId, code, input.supplier.trim(), input.supplierType, total, items.length],
   );
-  const ids: string[] = [];
-  for (const it of items) {
-    const id = uid("m");
-    ids.push(id);
-    await q.query(
-      `insert into machines (id, serial, batch_id, type, brand, model, cpu, gen, ram, storage, storage_type, screen, condition,
-        stage, location, cost, added_at, updated_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'checking',$14,$15,now(),now())`,
-      [id, it.serial.trim().toUpperCase(), batchId, it.type, it.brand, it.model, it.cpu, it.gen, it.ram, it.storage, it.storageType,
-        it.screen ?? null, it.condition ?? "Used", input.location, it.cost || perUnit],
-    );
-    await event(q, id, `Added with batch ${code} from ${input.supplier.trim()}`, "added", by);
-  }
+  const ids = items.map(() => uid("m"));
+  await insertMany(
+    q,
+    "machines",
+    ["id", "serial", "batch_id", "type", "brand", "model", "cpu", "gen", "ram", "storage", "storage_type", "screen", "condition",
+      "stage", "location", "cost", "added_at", "updated_at"],
+    items.map((it, i) => [
+      ids[i], it.serial.trim().toUpperCase(), batchId, it.type, it.brand, it.model, it.cpu, it.gen, it.ram, it.storage, it.storageType,
+      it.screen ?? null, it.condition ?? "Used", "checking", input.location, it.cost || perUnit, now(), now(),
+    ]),
+    150,
+  );
+  await events(q, ids, `Added with batch ${code} from ${input.supplier.trim()}`, "added", by);
   const act = await activity(q, `New batch ${code}: ${items.length} machines from ${input.supplier.trim()}`, "batch", by);
   return {
     batchCode: code,
@@ -216,7 +227,9 @@ export async function moveMachines(q: Q, by: Staff, a: { ids: string[]; to: Loca
     [a.ids],
   );
   const moving = rows.filter((r) => r.location !== a.to);
-  for (const r of moving) await event(q, r.id, `Moved from ${r.location} to ${a.to}`, "moved", by);
+  for (const from of ["Shop", "Godown"]) {
+    await events(q, moving.filter((r) => r.location === from).map((r) => r.id), `Moved from ${from} to ${a.to}`, "moved", by);
+  }
   if (moving.length)
     await q.query("update machines set location=$2, updated_at=now() where id = any($1)", [moving.map((r) => r.id), a.to]);
   const act = moving.length
@@ -258,7 +271,7 @@ export async function createOrder(q: Q, by: Staff, a: { buyer: string; need: Req
     [id, ids],
   );
   await q.query("update machines set stage='booked', order_id=$2, updated_at=now() where id = any($1)", [ids, id]);
-  for (const mid of ids) await event(q, mid, `Booked for big order ${code} (${a.buyer.trim()})`, "booked", by);
+  await events(q, ids, `Booked for big order ${code} (${a.buyer.trim()})`, "booked", by);
   const act = await activity(q, `Big order ${code} booked: ${ids.length} machines for ${a.buyer.trim()}`, "order", by);
   return {
     orderCode: code,
@@ -276,7 +289,7 @@ export async function dispatchOrder(q: Q, by: Staff, a: { id: string }): Promise
     "update machines set stage='sold', sold_price=$2, sold_to=$3, updated_at=now() where id = any($1) and stage='booked'",
     [o.machineIds, o.unitPrice, o.buyer],
   );
-  for (const mid of o.machineIds) await event(q, mid, `Dispatched to ${o.buyer} with ${o.code}`, "sold", by);
+  await events(q, o.machineIds, `Dispatched to ${o.buyer} with ${o.code}`, "sold", by);
   const act = await activity(q, `Big order ${o.code} dispatched to ${o.buyer}`, "dispatch", by);
   return {
     orders: await ordersByIds(q, [a.id]),
@@ -290,7 +303,7 @@ export async function cancelOrder(q: Q, by: Staff, a: { id: string }): Promise<P
   if (!o || o.status !== "booked") throw new UserError("Only booked orders can be cancelled.");
   await q.query("update orders set status='cancelled' where id=$1", [a.id]);
   await q.query("update machines set stage='ready', order_id=null, updated_at=now() where id = any($1) and stage='booked'", [o.machineIds]);
-  for (const mid of o.machineIds) await event(q, mid, `Released from cancelled order ${o.code}`, "released", by);
+  await events(q, o.machineIds, `Released from cancelled order ${o.code}`, "released", by);
   const act = await activity(q, `Big order ${o.code} cancelled — ${o.machineIds.length} machines back in stock`, "order", by);
   return {
     orders: await ordersByIds(q, [a.id]),
