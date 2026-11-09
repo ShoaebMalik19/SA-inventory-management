@@ -1,0 +1,118 @@
+/**
+ * Data model for the S.A Computers prototype.
+ * This file + store.ts are the only things that change when we move to Supabase.
+ */
+
+export type MachineType = "Laptop" | "Desktop";
+export type Condition = "Used" | "Refurbished" | "New";
+export type Grade = "A" | "B" | "C";
+export type Location = "Shop" | "Godown";
+
+/** Where a machine is in its life. Shown with plain words via STAGES below. */
+export type Stage = "checking" | "repair" | "ready" | "booked" | "sold" | "scrap";
+
+export const STAGES: Record<Stage, { label: string; hint: string }> = {
+  checking: { label: "Waiting for check", hint: "New arrival, not tested yet" },
+  repair: { label: "In repair", hint: "Needs a part or fix before sale" },
+  ready: { label: "Ready to sell", hint: "Checked, graded and wiped" },
+  booked: { label: "Booked", hint: "Set aside for a big order" },
+  sold: { label: "Sold", hint: "Left the shop" },
+  scrap: { label: "Scrap / parts", hint: "Not worth repairing" },
+};
+
+export const STAGE_ORDER: Stage[] = ["checking", "repair", "ready", "booked", "sold", "scrap"];
+
+export type HistoryEvent = {
+  at: string; // ISO
+  text: string;
+  kind: "added" | "checked" | "repair" | "upgrade" | "moved" | "booked" | "released" | "sold";
+};
+
+export type Machine = {
+  id: string;
+  serial: string;
+  batchId: string;
+  type: MachineType;
+  brand: string;
+  model: string;
+  cpu: string; // "Core i5"
+  gen: number; // 8 → 8th gen
+  ram: number; // GB
+  storage: number; // GB
+  storageType: "SSD" | "HDD";
+  screen?: number; // inches, laptops only
+  condition: Condition;
+  grade: Grade | null;
+  stage: Stage;
+  location: Location;
+  cost: number; // purchase cost share
+  repairCost: number;
+  price: number; // asking price
+  soldPrice?: number;
+  soldTo?: string;
+  orderId?: string;
+  wiped: boolean;
+  battery?: number; // % health, laptops
+  failedChecks?: string[];
+  addedAt: string;
+  updatedAt: string;
+  history: HistoryEvent[];
+};
+
+export type SupplierType = "Corporate buyback" | "Dealer" | "Import lot" | "Walk-in seller";
+
+export type Batch = {
+  id: string;
+  code: string; // "B-1101"
+  supplier: string;
+  supplierType: SupplierType;
+  date: string;
+  totalCost: number;
+  count: number;
+  note?: string;
+};
+
+/** What a buyer asks for in a big order. */
+export type Requirement = {
+  type: MachineType;
+  cpu: string;
+  minGen: number;
+  ram: number;
+  storage: number;
+  grade: Grade;
+  qty: number;
+};
+
+export type BigOrder = {
+  id: string;
+  code: string; // "BO-1042"
+  buyer: string;
+  createdAt: string;
+  status: "booked" | "dispatched" | "cancelled";
+  need: Requirement;
+  unitPrice: number;
+  machineIds: string[];
+  dispatchedAt?: string;
+};
+
+export type ShopSale = {
+  id: string;
+  code: string; // "SS-2201"
+  machineId: string;
+  customer: string;
+  phone: string;
+  price: number;
+  warrantyMonths: number;
+  at: string;
+};
+
+export type Activity = {
+  id: string;
+  at: string;
+  text: string;
+  kind: "batch" | "check" | "order" | "dispatch" | "sale" | "repair";
+};
+
+/** The single "spec" a buyer thinks in: i5 8th gen · 8GB · 256GB. */
+export const specKey = (m: Pick<Machine, "type" | "cpu" | "gen" | "ram" | "storage">) =>
+  `${m.type}|${m.cpu}|${m.gen}|${m.ram}|${m.storage}`;

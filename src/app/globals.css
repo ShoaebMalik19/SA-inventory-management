@@ -1,26 +1,112 @@
 @import "tailwindcss";
+@import "@fontsource-variable/bricolage-grotesque";
+@import "@fontsource-variable/figtree";
+@import "@fontsource/jetbrains-mono/500.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+  S.A Computers — design tokens
+  Godown green (brand) + asset-tag yellow (only for "Booked" and the active marker).
+*/
+@theme {
+  --font-sans: "Figtree Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque Variable", "Figtree Variable", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --color-mist: #eef2f0;
+  --color-surface: #ffffff;
+  --color-ink: #0f2a26;
+  --color-ink-2: #4a5e59;
+  --color-ink-3: #7d8f8a;
+  --color-line: #d7dfdb;
+  --color-line-soft: #e6ece9;
+
+  --color-brand: #0f5c4d;
+  --color-brand-deep: #0a3d34;
+  --color-brand-soft: #dcebe6;
+  --color-tag: #f5c542;
+  --color-tag-soft: #fcefc2;
+
+  /* stage colours — the same everywhere */
+  --color-st-checking: #9a6412;
+  --color-st-checking-bg: #fbf0da;
+  --color-st-repair: #c2410c;
+  --color-st-repair-bg: #fde7dc;
+  --color-st-ready: #15803d;
+  --color-st-ready-bg: #dcf5e3;
+  --color-st-booked: #6b4e00;
+  --color-st-booked-bg: #fcefc2;
+  --color-st-sold: #475569;
+  --color-st-sold-bg: #e8ecf0;
+  --color-st-scrap: #9f1239;
+  --color-st-scrap-bg: #fbe1e7;
+
+  --radius-panel: 18px;
+  --radius-row: 10px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--color-mist);
+  color: var(--color-ink);
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 96;
+  letter-spacing: -0.02em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* the barcode stripe on the machine tag */
+.barcode {
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--color-ink) 0 2px,
+    transparent 2px 3px,
+    var(--color-ink) 3px 4px,
+    transparent 4px 7px,
+    var(--color-ink) 7px 10px,
+    transparent 10px 11px
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes sheet-left {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media print {
+  body * { visibility: hidden !important; }
+  .print-area, .print-area * { visibility: visible !important; }
+  .print-area { position: fixed; left: 0; top: 0; width: 100%; border: none; }
 }

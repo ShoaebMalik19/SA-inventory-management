@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# S.A Computers — Stock prototype
 
-## Getting Started
+A working prototype of a stock system for **S.A Computers, RT Nagar, Bengaluru**:
+used laptops and desktops, bulk orders for buyers like Cashify, and walk-in shop sales.
 
-First, run the development server:
+## Run it
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev        # open http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Deploy: push this folder to GitHub and import it on vercel.com (no settings needed).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## What's inside
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Screen | What it does |
+| --- | --- |
+| Home | Machines ready to sell, where all stock is, money in the last 30 days, what needs attention |
+| All machines | Every machine by serial — search, filter, scan, download to Excel, full history per machine |
+| Ready stock | Ready machines by spec × grade, plus "A buyer is asking — can you fill it?" |
+| Check & grade | Test → battery → upgrade → grade → wipe. Opens the next machine automatically |
+| Add stock | New purchase batch from an Excel sheet (any column order) or by scanning serials |
+| Big orders | Auto-picks the right machines (closest spec, oldest stock first), books them, Excel serial list, dispatch |
+| Shop sale | Sells one machine, blocks machines booked for big orders, prints a warranty slip |
+| Batches | Money back, profit so far and expected profit for every purchase batch |
 
-## Learn More
+## Prototype notes
 
-To learn more about Next.js, take a look at the following resources:
+- All data is sample data (~1,300 machines), saved in the browser. "Reset demo data" in the sidebar restores it.
+- `src/lib/data/` is the only layer that changes when this moves to a real database (Supabase).
+  Screens only talk to `store.ts` and `selectors.ts`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 8-minute demo script
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. **Home** — "398 machines ready to sell", stock split by shop/godown, profit last 30 days.
+2. **Add stock** → "Download a sample sheet (200 machines)" → upload it → Add → lands in Check & grade.
+3. **Check & grade** → open a machine → battery 85% → Grade A → wiped → Mark ready. Next one opens by itself.
+4. **Ready stock** → "120 × i5 8th gen, 8 GB, 256 GB, Grade A" → "Yes — you have N" → **Book 120 for a buyer** → Book.
+5. **Big orders** → download the serial list (Excel).
+6. **Shop sale** → type a serial from that order → blocked. Type "T480" → sell → print the warranty slip.
+7. **Batches** → which lots made money, which had too much scrap.
+8. Close: "Tell me how you do it today and I'll fit it to you."
