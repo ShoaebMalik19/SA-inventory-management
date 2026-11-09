@@ -5,6 +5,7 @@ import { currentUser, endSession, NotAllowed, requireUser, startSession } from "
 import { forRole, loadSnapshot, type Patch } from "./repo";
 import * as svc from "./service";
 import { loadSampleData } from "./seed-db";
+import type { SupplierInput } from "./suppliers";
 import { verifyPin } from "./pin";
 import type { Permission } from "@/lib/roles";
 import type { BusinessSettings, Grade, Location, PaymentMode, Requirement, Role, SupplierType } from "@/lib/data/types";
@@ -24,8 +25,8 @@ async function run<X extends object>(
     const user = await requireUser(permission);
     const db = await getDb();
     const out = await db.tx((q) => fn(q, user));
-    const { machines, batches, orders, sales, returns, activity, staff, settings, buyers, invoices, payments, replaceAll, ...extra } = out;
-    const patch = forRole({ machines, batches, orders, sales, returns, activity, staff, settings, buyers, invoices, payments }, user.role);
+    const { machines, batches, orders, sales, returns, activity, staff, settings, buyers, invoices, payments, suppliers, supplierPayments, dataMode, replaceAll, ...extra } = out;
+    const patch = forRole({ machines, batches, orders, sales, returns, activity, staff, settings, buyers, invoices, payments, suppliers, supplierPayments, dataMode }, user.role);
     return { ok: true, patch: { ...patch, replaceAll: replaceAll ? forRole(replaceAll, user.role) : undefined }, ...(extra as X) };
   } catch (e) {
     if (e instanceof svc.UserError || e instanceof NotAllowed) return { ok: false, error: e.message };
@@ -59,6 +60,10 @@ export async function addBatch(input: {
   totalCost: number;
   location: Location;
   items: svc.NewMachine[];
+  billNo?: string;
+  payDays?: number;
+  paidNow?: number;
+  paidMode?: PaymentMode;
 }) {
   return run("addStock", (q, u) => svc.addBatch(q, u, input));
 }
@@ -117,6 +122,7 @@ export async function saveStaff(input: { id?: string; name: string; role: Role; 
 
 export async function resetDemoData() {
   return run("reset", async (q) => {
+    await svc.assertSampleMode(q);
     await loadSampleData(q);
     return { replaceAll: await loadSnapshot(q) };
   });
@@ -139,4 +145,27 @@ export async function saveBuyer(input: svc.BuyerInput & { id?: string }) {
 
 export async function saveSettings(input: BusinessSettings) {
   return run("settings", (q, u) => svc.saveSettings(q, u, input));
+}
+
+/* ---- suppliers ---- */
+
+export async function paySupplier(input: { batchId: string; amount: number; mode: PaymentMode; reference?: string }) {
+  return run("billing", (q, u) => svc.paySupplier(q, u, input));
+}
+
+export async function saveSupplier(input: SupplierInput & { id?: string }) {
+  return run("billing", (q, u) => svc.saveSupplier(q, u, input));
+}
+
+/* ---- real data ---- */
+
+export async function importStock(input: { rows: svc.ImportRow[]; alreadyPaid: boolean }) {
+  return run("importStock", (q, u) => svc.importStock(q, u, input));
+}
+
+export async function startLive(input: { confirm: string }) {
+  return run("reset", async (q, u) => {
+    await svc.startLive(q, u, input);
+    return { replaceAll: await loadSnapshot(q) };
+  });
 }

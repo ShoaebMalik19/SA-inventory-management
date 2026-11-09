@@ -309,6 +309,8 @@ export async function backfillBilling(q: Q) {
 }
 
 export async function ensureBilling(db: Db) {
+  const mode = await db.query<{ value: string }>("select value from settings where key = 'data_mode'");
+  if (mode[0]?.value === "live") return; // a live shop starts empty; never add sample buyers or bills
   const rows = await db.query<{ n: number }>("select count(*)::int as n from invoices");
   const hasSettings = await db.query("select 1 from settings where key = 'business'");
   if (rows[0].n > 0 && hasSettings.length) return;

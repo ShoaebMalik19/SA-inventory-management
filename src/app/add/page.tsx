@@ -7,7 +7,10 @@ import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Keyboard, Plus, T
 import { useStore, type NewMachineInput } from "@/lib/data/store";
 import { CATALOG } from "@/lib/data/seed";
 import { downloadSampleSheet, parseSheet, type ParsedRow } from "@/lib/data/excel";
-import type { Location, SupplierType } from "@/lib/data/types";
+import { SUPPLIER_TYPES, type Location, type PaymentMode, type SupplierType } from "@/lib/data/types";
+import { ModeChips } from "@/components/supplier-forms";
+import { can } from "@/lib/roles";
+import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/fields";
@@ -22,8 +25,16 @@ export default function AddStockPage() {
   const addBatch = useStore((s) => s.addBatch);
   const existing = useMemo(() => new Set(machines.map((m) => m.serial.toUpperCase())), [machines]);
 
+  const user = useStore((s) => s.user);
+  const suppliers = useStore((s) => s.suppliers);
+  const money = can(user?.role, "billing");
   const [supplier, setSupplier] = useState("");
   const [supplierType, setSupplierType] = useState<SupplierType>("Corporate buyback");
+  const [billNo, setBillNo] = useState("");
+  const [payDays, setPayDays] = useState<number | "">("");
+  const [paidNow, setPaidNow] = useState<number | "">("");
+  const [paidMode, setPaidMode] = useState<PaymentMode>("Bank transfer");
+  const known = suppliers.find((s) => s.name.toLowerCase() === supplier.trim().toLowerCase());
   const [totalPaid, setTotalPaid] = useState<number | "">("");
   const [location, setLocation] = useState<Location>("Godown");
   const [mode, setMode] = useState<Mode>("excel");
@@ -41,7 +52,17 @@ export default function AddStockPage() {
   const [saving, setSaving] = useState(false);
   const save = async () => {
     setSaving(true);
-    const res = await addBatch({ supplier: supplier.trim(), supplierType, totalCost: total, location, items: good });
+    const res = await addBatch({
+      supplier: supplier.trim(),
+      supplierType,
+      totalCost: total,
+      location,
+      items: good,
+      billNo,
+      payDays: payDays === "" ? undefined : payDays,
+      paidNow: paidNow || 0,
+      paidMode,
+    });
     setSaving(false);
     if (!res.ok) return toast.error(res.error);
     toast.success(`Batch ${res.batchCode} added — ${good.length} machines`, {
@@ -53,6 +74,12 @@ export default function AddStockPage() {
   return (
     <div>
       <PageHeader title="Add stock" sub="Enter a new purchase batch. Every machine goes to Check & grade before it can be sold." />
+      {can(user?.role, "importStock") && (
+        <p className="-mt-2 mb-5 text-[14px] text-ink-2">
+          Already have machines in the shop that aren&apos;t in the app yet?{" "}
+          <Link href="/import" className="font-semibold text-brand hover:underline">Import your existing stock</Link> — with status, grade and price.
+        </p>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-5">
@@ -60,15 +87,24 @@ export default function AddStockPage() {
           <section className="rounded-[var(--radius-panel)] border border-line bg-surface p-5 sm:p-6">
             <StepTitle n={1} title="Where did this batch come from?" />
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <Field label="Bought from">
-                <Input value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="e.g. Hebbal office IT refresh" />
+              <Field label="Bought from" hint={known ? `Known supplier · you usually pay in ${known.termsDays || 0} days` : undefined}>
+                <Input
+                  list="supplier-names"
+                  value={supplier}
+                  onChange={(e) => {
+                    setSupplier(e.target.value);
+                    const k = suppliers.find((s) => s.name.toLowerCase() === e.target.value.trim().toLowerCase());
+                    if (k) setSupplierType(k.kind);
+                  }}
+                  placeholder="e.g. Hebbal office IT refresh"
+                />
+                <datalist id="supplier-names">
+                  {suppliers.map((s) => <option key={s.id} value={s.name} />)}
+                </datalist>
               </Field>
               <Field label="Type of seller">
                 <Select value={supplierType} onChange={(e) => setSupplierType(e.target.value as SupplierType)}>
-                  <option>Corporate buyback</option>
-                  <option>Dealer</option>
-                  <option>Import lot</option>
-                  <option>Walk-in seller</option>
+                  {SUPPLIER_TYPES.map((t) => <option key={t}>{t}</option>)}
                 </Select>
               </Field>
               <Field label="Total paid for the batch (₹)" hint={sheetCost && !totalPaid ? `Leave empty to use the sheet's total: ${rupees(sheetCost)}` : "Split across the machines to work out profit."}>
@@ -91,6 +127,30 @@ export default function AddStockPage() {
                 </div>
               </Field>
             </div>
+            {money && (
+              <div className="mt-5 grid gap-3 border-t border-line-soft pt-5 sm:grid-cols-3">
+                <Field label="Their bill no. (optional)">
+                  <Input value={billNo} onChange={(e) => setBillNo(e.target.value)} placeholder="e.g. INV-2231" />
+                </Field>
+                <Field label="Paid them now (₹)" hint={total > 0 ? (paidNow ? `${rupees(Math.max(0, total - paidNow))} left to pay` : `Leave empty if you'll pay later`) : undefined}>
+                  <Input type="number" value={paidNow} onChange={(e) => setPaidNow(e.target.value === "" ? "" : +e.target.value)} placeholder="0" />
+                </Field>
+                <Field label="Pay the rest within (days)" hint="0 = paid on pickup">
+                  <Input
+                    type="number"
+                    min={0}
+                    value={payDays === "" ? (known?.termsDays ?? "") : payDays}
+                    onChange={(e) => setPayDays(e.target.value === "" ? "" : Math.max(0, +e.target.value))}
+                    placeholder="e.g. 15"
+                  />
+                </Field>
+                {!!paidNow && (
+                  <div className="sm:col-span-3">
+                    <ModeChips value={paidMode} onChange={setPaidMode} />
+                  </div>
+                )}
+              </div>
+            )}
           </section>
 
           {/* Step 2 */}

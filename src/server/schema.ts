@@ -174,6 +174,33 @@ create table if not exists payments (
 );
 create index if not exists payments_invoice_idx on payments(invoice_id);
 
+-- money owed to the people we buy stock from
+alter table batches add column if not exists bill_no text;
+alter table batches add column if not exists due_date timestamptz;
+
+create table if not exists suppliers (
+  id text primary key,
+  name text not null unique,
+  kind text not null default 'Dealer',
+  phone text,
+  gstin text,
+  state text not null default 'Karnataka',
+  address text,
+  terms_days integer not null default 0
+);
+
+create table if not exists supplier_payments (
+  id text primary key,
+  batch_id text not null references batches(id) on delete cascade,
+  supplier text not null,
+  amount numeric(12,2) not null,
+  mode text not null,
+  reference text,
+  at timestamptz not null,
+  by_name text
+);
+create index if not exists supplier_payments_batch_idx on supplier_payments(batch_id);
+
 create sequence if not exists batch_code_seq start 1101;
 create sequence if not exists order_code_seq start 1040;
 create sequence if not exists sale_code_seq start 2201;
@@ -195,9 +222,13 @@ alter table buyers enable row level security;
 alter table invoices enable row level security;
 alter table invoice_counters enable row level security;
 alter table payments enable row level security;
+alter table suppliers enable row level security;
+alter table supplier_payments enable row level security;
 `;
 
 export const TABLES_IN_DELETE_ORDER = [
+  "supplier_payments",
+  "suppliers",
   "payments",
   "invoices",
   "invoice_counters",

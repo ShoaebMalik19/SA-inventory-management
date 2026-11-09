@@ -9,6 +9,8 @@ const nextConfig: NextConfig = {
   // The whole app sits behind the staff login and renders in the browser,
   // so automatic instant-navigation checks don't apply.
   experimental: {
+    // a shop's existing stock sheet can run to thousands of rows (Vercel caps requests at 4.5 MB)
+    serverActions: { bodySizeLimit: "4mb" },
     instantInsights: {
       validationLevel: "manual-warning",
     },

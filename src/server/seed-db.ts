@@ -91,6 +91,9 @@ export async function loadSampleData(q: Q) {
   // invoices, payments and buyers for the sample sales
   const { backfillBilling } = await import("./billing");
   await backfillBilling(q);
+  const { backfillSuppliers, setDataMode } = await import("./suppliers");
+  await backfillSuppliers(q);
+  await setDataMode(q, "sample");
 }
 
 /** First start: create the session secret, the demo staff and the sample stock. */

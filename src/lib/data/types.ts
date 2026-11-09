@@ -61,6 +61,7 @@ export type Machine = {
 };
 
 export type SupplierType = "Corporate buyback" | "Dealer" | "Import lot" | "Walk-in seller";
+export const SUPPLIER_TYPES: SupplierType[] = ["Corporate buyback", "Dealer", "Import lot", "Walk-in seller"];
 
 export type Batch = {
   id: string;
@@ -71,6 +72,8 @@ export type Batch = {
   totalCost: number;
   count: number;
   note?: string;
+  billNo?: string; // supplier's bill number
+  dueDate?: string; // when we must pay the supplier
 };
 
 /** What a buyer asks for in a big order. */
@@ -112,7 +115,7 @@ export type Activity = {
   id: string;
   at: string;
   text: string;
-  kind: "batch" | "check" | "order" | "dispatch" | "sale" | "repair" | "return" | "move" | "staff" | "payment" | "settings";
+  kind: "batch" | "check" | "order" | "dispatch" | "sale" | "repair" | "return" | "move" | "staff" | "payment" | "settings" | "supplier";
   by?: string;
 };
 
@@ -215,3 +218,30 @@ export type Payment = {
   at: string;
   by?: string;
 };
+
+/** Someone we buy stock from. */
+export type Supplier = {
+  id: string;
+  name: string;
+  kind: SupplierType;
+  phone?: string;
+  gstin?: string;
+  state: string;
+  address?: string;
+  termsDays: number; // days we get to pay
+};
+
+/** Money we paid a supplier against a purchase batch. */
+export type SupplierPayment = {
+  id: string;
+  batchId: string;
+  supplier: string;
+  amount: number;
+  mode: PaymentMode;
+  reference?: string;
+  at: string;
+  by?: string;
+};
+
+/** "sample" while the shop is trying the app; "live" once its real stock is in. */
+export type DataMode = "sample" | "live";

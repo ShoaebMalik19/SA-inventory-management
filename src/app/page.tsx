@@ -17,11 +17,16 @@ import {
   Store,
   Truck,
   Wrench,
+  HandCoins,
+  TrendingDown,
+  FileSpreadsheet,
 } from "lucide-react";
 import { useStore } from "@/lib/data/store";
 import {
   agingStock,
   moneyToCollect,
+  owedToSuppliers,
+  runningLow,
   salesInLast,
   specLabel,
   specMatrix,
@@ -54,6 +59,7 @@ const ACTIVITY_ICON: Record<Activity["kind"], typeof Truck> = {
   staff: Users,
   payment: IndianRupee,
   settings: Settings,
+  supplier: HandCoins,
 };
 
 export default function HomePage() {
@@ -63,6 +69,11 @@ export default function HomePage() {
   const invoices = useStore((s) => s.invoices);
   const payments = useStore((s) => s.payments);
   const dues = useMemo(() => moneyToCollect(invoices, payments), [invoices, payments]);
+  const batches = useStore((s) => s.batches);
+  const supplierPayments = useStore((s) => s.supplierPayments);
+  const dataMode = useStore((s) => s.dataMode);
+  const owe = useMemo(() => owedToSuppliers(batches, supplierPayments), [batches, supplierPayments]);
+  const low = useMemo(() => runningLow(machines).slice(0, 3), [machines]);
 
   const d = useMemo(() => {
     const counts = stageCounts(machines);
@@ -84,6 +95,30 @@ export default function HomePage() {
 
   return (
     <div>
+      {dataMode === "sample" ? (
+        <Link
+          href="/import"
+          className="mb-6 flex items-center gap-3 rounded-2xl border border-dashed border-brand/40 bg-brand-soft/50 px-4 py-3 text-[14px] text-brand-deep hover:bg-brand-soft"
+        >
+          <FileSpreadsheet className="size-4 shrink-0" />
+          <span className="min-w-0 flex-1">
+            <b>You&apos;re looking at sample data.</b> When you&apos;re ready, bring in your real stock from Excel.
+          </span>
+          <ArrowUpRight className="size-4 shrink-0" />
+        </Link>
+      ) : machines.length === 0 ? (
+        <Link
+          href="/import"
+          className="mb-6 flex items-center gap-4 rounded-[var(--radius-panel)] border-2 border-brand bg-surface p-5 hover:bg-brand-soft/40"
+        >
+          <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-brand text-white"><FileSpreadsheet className="size-5" /></span>
+          <span className="min-w-0 flex-1">
+            <span className="font-display block text-lg font-bold">Bring in the stock you already have</span>
+            <span className="text-ink-2">Upload your Excel sheet — every machine comes in with its status, grade and price.</span>
+          </span>
+          <ArrowUpRight className="size-5 shrink-0 text-brand" />
+        </Link>
+      ) : null}
       {/* Hero: the one number the owner cares about */}
       <section className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
         <div>
@@ -169,11 +204,14 @@ export default function HomePage() {
             danger={dues.overdue > 0}
           />
         </Link>
-        <Figure
-          label="Booked for big orders"
-          value={`${count(d.counts.booked)} machines`}
-          note={d.openOrders.length ? `${d.openOrders.length} order waiting to dispatch` : "No open orders"}
-        />
+        <Link href="/suppliers" className="group">
+          <Figure
+            label="You owe suppliers"
+            value={rupeesShort(owe.total)}
+            note={owe.overdue > 0 ? `${rupeesShort(owe.overdue)} past the payment date` : owe.total > 0 ? "Nothing overdue" : "All suppliers paid"}
+            danger={owe.overdue > 0}
+          />
+        </Link>
       </section>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[1.05fr_1fr]">
@@ -209,6 +247,25 @@ export default function HomePage() {
                 tone="scrap"
                 title={`${rupees(dues.overdue)} overdue from buyers`}
                 note={`${dues.rows.filter((r) => r.overdue > 0).map((r) => r.buyer).join(", ")} — past their payment date`}
+              />
+            )}
+            {low.map((l) => (
+              <Attention
+                key={l.spec}
+                href="/stock"
+                icon={TrendingDown}
+                tone="repair"
+                title={`Running low: ${l.spec}`}
+                note={`${l.ready} ready, sold ${l.sold} in 30 days${l.coming ? ` · ${l.coming} still being checked` : " — time to buy more"}`}
+              />
+            ))}
+            {owe.overdue > 0 && (
+              <Attention
+                href="/suppliers"
+                icon={HandCoins}
+                tone="scrap"
+                title={`${rupees(owe.overdue)} to pay suppliers is overdue`}
+                note={`${owe.rows.filter((r) => r.overdue > 0).map((r) => r.supplier).join(", ")}`}
               />
             )}
             {d.openOrders.map((o) => (

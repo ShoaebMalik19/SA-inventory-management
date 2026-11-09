@@ -12,6 +12,7 @@ import {
   type Patch,
 } from "./repo";
 import { askingPrice } from "@/lib/data/seed";
+import { can } from "@/lib/roles";
 import { pickForRequirement } from "@/lib/data/selectors";
 import type {
   Activity,
@@ -41,6 +42,18 @@ import {
 import type { BusinessSettings, PaymentMode } from "@/lib/data/types";
 import { PAYMENT_MODES } from "@/lib/data/types";
 import { STATES } from "@/lib/gst";
+import {
+  addSupplierPayment,
+  batchBalance,
+  getDataMode,
+  listSuppliers,
+  setDataMode,
+  supplierByName,
+  supplierPaymentsFor,
+  upsertSupplier,
+  type SupplierInput,
+} from "./suppliers";
+import { TABLES_IN_DELETE_ORDER } from "./schema";
 
 /**
  * All business rules live here, run inside one database transaction per action.
@@ -108,7 +121,17 @@ export type NewMachine = {
 export async function addBatch(
   q: Q,
   by: Staff,
-  input: { supplier: string; supplierType: SupplierType; totalCost: number; location: Location; items: NewMachine[] },
+  input: {
+    supplier: string;
+    supplierType: SupplierType;
+    totalCost: number;
+    location: Location;
+    items: NewMachine[];
+    billNo?: string;
+    payDays?: number; // days we have to pay; default: the supplier's usual terms
+    paidNow?: number;
+    paidMode?: PaymentMode;
+  },
 ): Promise<Patch & { batchCode: string }> {
   const items = input.items.filter((i) => i.serial.trim());
   if (!input.supplier.trim()) throw new UserError("Enter who you bought this batch from.");
@@ -124,12 +147,27 @@ export async function addBatch(
   if (total <= 0) throw new UserError("Enter the total paid for the batch.");
   const perUnit = Math.round(total / items.length);
 
+  // only owner and manager deal with supplier money; others just add the machines
+  const paidNow = can(by.role, "billing") ? Math.max(0, Math.round(input.paidNow || 0)) : 0;
+  if (paidNow > total) throw new UserError(`You can't pay more than the batch cost of ${rs(total)}.`);
+  if (paidNow > 0 && !PAYMENT_MODES.includes(input.paidMode ?? "Cash")) throw new UserError("Pick how you paid the supplier.");
+
+  // the supplier is remembered, with their usual payment terms
+  const known = await supplierByName(q, input.supplier);
+  const payDays = Math.max(0, Math.min(365, Math.round(input.payDays ?? known?.termsDays ?? 0)));
+  const supplierName = known?.name ?? input.supplier.trim();
+  await upsertSupplier(q, { ...known, name: supplierName, kind: input.supplierType, termsDays: payDays }, known?.id);
+
   const code = await nextCode(q, "batch_code_seq", "B");
   const batchId = uid("b");
   await q.query(
-    "insert into batches (id, code, supplier, supplier_type, date, total_cost, count) values ($1,$2,$3,$4,now(),$5,$6)",
-    [batchId, code, input.supplier.trim(), input.supplierType, total, items.length],
+    "insert into batches (id, code, supplier, supplier_type, date, total_cost, count, bill_no, due_date) values ($1,$2,$3,$4,now(),$5,$6,$7,now() + $8::int * interval '1 day')",
+    [batchId, code, supplierName, input.supplierType, total, items.length, input.billNo?.trim() || null, payDays],
   );
+  const spIds: string[] = [];
+  if (paidNow > 0) {
+    spIds.push(await addSupplierPayment(q, { batchId, supplier: supplierName, amount: paidNow, mode: input.paidMode ?? "Cash", reference: "Paid on purchase", byName: by.name }));
+  }
   const ids = items.map(() => uid("m"));
   await insertMany(
     q,
@@ -142,13 +180,15 @@ export async function addBatch(
     ]),
     150,
   );
-  await events(q, ids, `Added with batch ${code} from ${input.supplier.trim()}`, "added", by);
-  const act = await activity(q, `New batch ${code}: ${items.length} machines from ${input.supplier.trim()}`, "batch", by);
+  await events(q, ids, `Added with batch ${code} from ${supplierName}`, "added", by);
+  const act = await activity(q, `New batch ${code}: ${items.length} machines from ${supplierName}`, "batch", by);
   return {
     batchCode: code,
     batches: await batchesByIds(q, [batchId]),
     machines: await machinesByIds(q, ids),
     activity: await activityByIds(q, [act]),
+    suppliers: await listSuppliers(q),
+    supplierPayments: spIds.length ? await supplierPaymentsFor(q, spIds) : undefined,
   };
 }
 
@@ -514,4 +554,161 @@ export async function saveBuyer(q: Q, by: Staff, b: BuyerInput & { id?: string }
   if (clash && clash.id !== b.id) throw new UserError("A buyer with this name already exists.");
   await upsertBuyer(q, b);
   return { buyers: await listBuyers(q) };
+}
+
+/* ---------------- Suppliers (money going out) ---------------- */
+
+export async function paySupplier(
+  q: Q,
+  by: Staff,
+  a: { batchId: string; amount: number; mode: PaymentMode; reference?: string },
+): Promise<Patch> {
+  if (!PAYMENT_MODES.includes(a.mode)) throw new UserError("Pick how you paid.");
+  const b = await batchBalance(q, a.batchId);
+  if (!b) throw new UserError("This batch doesn't exist.");
+  if (!(a.amount > 0)) throw new UserError("Enter the amount paid.");
+  if (a.amount > b.balance + 0.5) throw new UserError(`Only ${rs(b.balance)} is still owed on batch ${b.code}.`);
+  const id = await addSupplierPayment(q, { batchId: a.batchId, supplier: b.supplier, amount: a.amount, mode: a.mode, reference: a.reference, byName: by.name });
+  const act = await activity(q, `${rs(a.amount)} paid to ${b.supplier} for batch ${b.code} (${a.mode})`, "supplier", by);
+  return { supplierPayments: await supplierPaymentsFor(q, [id]), activity: await activityByIds(q, [act]) };
+}
+
+export async function saveSupplier(q: Q, by: Staff, s: SupplierInput & { id?: string }): Promise<Patch> {
+  if (!s.name.trim()) throw new UserError("Enter the supplier's name.");
+  if (s.gstin && !/^[0-9]{2}[A-Z0-9]{13}$/i.test(s.gstin.trim())) throw new UserError("A GSTIN has 15 letters and digits.");
+  if (s.phone && !/^[0-9+ -]{8,15}$/.test(s.phone.trim())) throw new UserError("Check the phone number.");
+  const terms = Math.round(Number(s.termsDays ?? 0));
+  if (!(terms >= 0 && terms <= 365)) throw new UserError("Payment days must be between 0 and 365.");
+  const clash = await supplierByName(q, s.name);
+  if (clash && clash.id !== s.id) throw new UserError("A supplier with this name already exists.");
+  let batches: Patch["batches"];
+  if (s.id) {
+    const [old] = await listSuppliers(q, [s.id]);
+    if (old && old.name !== s.name.trim()) {
+      // keep the batches pointing at the renamed supplier
+      const ids = await q.query<{ id: string }>("update batches set supplier = $2 where supplier = $1 returning id", [old.name, s.name.trim()]);
+      await q.query("update supplier_payments set supplier = $2 where supplier = $1", [old.name, s.name.trim()]);
+      batches = await batchesByIds(q, ids.map((r) => r.id));
+    }
+  }
+  await upsertSupplier(q, { ...s, termsDays: terms }, s.id);
+  return { suppliers: await listSuppliers(q), batches, supplierPayments: s.id ? await supplierPaymentsFor(q) : undefined };
+}
+
+/* ---------------- Bringing in the shop's real stock ---------------- */
+
+export type ImportRow = NewMachine & {
+  stage: "checking" | "repair" | "ready" | "scrap";
+  grade?: Grade | null;
+  location: Location;
+  cost: number;
+  price?: number;
+  battery?: number;
+  supplier?: string;
+  boughtOn?: string; // ISO date
+};
+
+/**
+ * Loads stock the shop already has (from its Excel sheet) with each machine's current status.
+ * Machines are grouped into one "opening stock" batch per supplier. Opening stock is treated as paid
+ * unless the owner says money is still owed.
+ */
+export async function importStock(
+  q: Q,
+  by: Staff,
+  a: { rows: ImportRow[]; alreadyPaid: boolean },
+): Promise<Patch & { imported: number; batchCodes: string[] }> {
+  const rows = a.rows.filter((r) => r.serial?.trim());
+  if (!rows.length) throw new UserError("There are no machines to import.");
+  if (rows.length > 5000) throw new UserError("Import at most 5,000 machines at a time — split the sheet.");
+  const serials = rows.map((r) => r.serial.trim().toUpperCase());
+  if (new Set(serials).size !== serials.length) throw new UserError("The same serial number appears twice in the sheet.");
+  const taken = await q.query<{ serial: string }>("select serial from machines where upper(serial) = any($1)", [serials]);
+  if (taken.length) throw new UserError(`Already in stock: ${taken.slice(0, 3).map((t) => t.serial).join(", ")}${taken.length > 3 ? "…" : ""}`);
+
+  for (const r of rows) {
+    if (!["checking", "repair", "ready", "scrap"].includes(r.stage)) throw new UserError(`${r.serial}: unknown status.`);
+    if (!["Shop", "Godown"].includes(r.location)) throw new UserError(`${r.serial}: location must be Shop or Godown.`);
+    if (r.grade && !["A", "B", "C"].includes(r.grade)) throw new UserError(`${r.serial}: grade must be A, B or C.`);
+    if (!(r.cost >= 0) || !(r.gen > 0) || !(r.ram > 0) || !(r.storage > 0)) throw new UserError(`${r.serial}: check cost, generation, RAM and storage.`);
+  }
+
+  // one batch per supplier
+  const groups = new Map<string, ImportRow[]>();
+  for (const r of rows) {
+    const key = r.supplier?.trim() || "Opening stock";
+    groups.set(key, [...(groups.get(key) ?? []), r]);
+  }
+
+  const batchIds: string[] = [];
+  const batchCodes: string[] = [];
+  const machineIds: string[] = [];
+  const spIds: string[] = [];
+  const stamp = now();
+  for (const [supplier, items] of groups) {
+    const known = await supplierByName(q, supplier);
+    const name = known?.name ?? supplier;
+    const kind: SupplierType = known?.kind ?? "Dealer";
+    if (!known) await upsertSupplier(q, { name, kind, termsDays: 0 });
+    const dates = items.map((i) => i.boughtOn).filter((d): d is string => !!d && !Number.isNaN(Date.parse(d))).sort();
+    const date = dates[0] ?? stamp;
+    const total = items.reduce((s, i) => s + Math.round(i.cost || 0), 0);
+    const code = await nextCode(q, "batch_code_seq", "B");
+    const batchId = uid("b");
+    await q.query(
+      "insert into batches (id, code, supplier, supplier_type, date, total_cost, count, note, due_date) values ($1,$2,$3,$4,$5,$6,$7,$8,$5)",
+      [batchId, code, name, kind, date, total, items.length, "Opening stock — imported from the shop's sheet"],
+    );
+    if (a.alreadyPaid && total > 0) {
+      spIds.push(await addSupplierPayment(q, { batchId, supplier: name, amount: total, mode: "Bank transfer", reference: "Opening stock (paid before the app)", at: date, byName: by.name }));
+    }
+    const ids = items.map(() => uid("m"));
+    await insertMany(
+      q,
+      "machines",
+      ["id", "serial", "batch_id", "type", "brand", "model", "cpu", "gen", "ram", "storage", "storage_type", "screen", "condition",
+        "grade", "stage", "location", "cost", "price", "wiped", "battery", "added_at", "updated_at"],
+      items.map((it, i) => {
+        const grade = it.stage === "ready" ? (it.grade ?? "B") : (it.grade ?? null);
+        const price = it.price && it.price > 0 ? Math.round(it.price)
+          : it.stage === "ready" ? askingPrice({ cost: it.cost, repairCost: 0, grade, ram: it.ram, storage: it.storage }) : 0;
+        return [
+          ids[i], it.serial.trim().toUpperCase(), batchId, it.type, it.brand.trim(), it.model.trim(), it.cpu, it.gen, it.ram, it.storage,
+          it.storageType, it.screen ?? null, it.condition ?? "Used", grade, it.stage, it.location, Math.round(it.cost || 0), price,
+          it.stage === "ready", it.battery ?? null, date, stamp,
+        ];
+      }),
+      150,
+    );
+    await events(q, ids, `Imported as opening stock (batch ${code})`, "added", by);
+    batchIds.push(batchId);
+    batchCodes.push(code);
+    machineIds.push(...ids);
+  }
+  const act = await activity(q, `Imported ${rows.length.toLocaleString("en-IN")} machines of existing stock (${batchCodes.join(", ")})`, "batch", by);
+  return {
+    imported: rows.length,
+    batchCodes,
+    batches: await batchesByIds(q, batchIds),
+    machines: await machinesByIds(q, machineIds),
+    suppliers: await listSuppliers(q),
+    supplierPayments: spIds.length ? await supplierPaymentsFor(q, spIds) : undefined,
+    activity: await activityByIds(q, [act]),
+  };
+}
+
+/**
+ * Owner only: clears every sample machine, batch, order, sale, bill and payment so the shop can start with its own data.
+ * Staff, PINs and business settings are kept. Bill numbering starts again from 0001.
+ */
+export async function startLive(q: Q, by: Staff, a: { confirm: string }): Promise<Patch> {
+  if (a.confirm.trim().toUpperCase() !== "START") throw new UserError('Type START to confirm.');
+  for (const t of TABLES_IN_DELETE_ORDER) await q.query(`delete from ${t}`);
+  await setDataMode(q, "live");
+  await activity(q, "Sample data cleared — the shop's real data starts here", "settings", by);
+  return {};
+}
+
+export async function assertSampleMode(q: Q) {
+  if ((await getDataMode(q)) === "live") throw new UserError("Your real data is in use, so sample data can't be loaded over it.");
 }

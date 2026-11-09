@@ -10,6 +10,7 @@ export const PERMISSIONS = {
   returns: ["owner", "manager", "counter"],
   move: ["owner", "manager", "technician", "counter"],
   billing: ["owner", "manager"],
+  importStock: ["owner", "manager"],
   settings: ["owner"],
   staff: ["owner"],
   reset: ["owner"],
@@ -48,6 +49,8 @@ export const PAGE_ACCESS: Record<string, readonly Role[]> = {
   "/staff": PERMISSIONS.staff,
   "/invoices": ["owner", "manager", "counter"],
   "/money": PERMISSIONS.billing,
+  "/suppliers": PERMISSIONS.billing,
+  "/import": PERMISSIONS.importStock,
   "/settings": PERMISSIONS.settings,
 };
 

@@ -72,6 +72,8 @@ export function getDb(): Promise<Db> {
       await ensureSeeded(db);
       const { ensureBilling } = await import("./billing");
       await ensureBilling(db);
+      const { ensureSuppliers } = await import("./suppliers");
+      await ensureSuppliers(db);
       return db;
     })().catch((e) => {
       g.__saDb = undefined;

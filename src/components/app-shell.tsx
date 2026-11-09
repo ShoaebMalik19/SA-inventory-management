@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Toaster, toast } from "sonner";
 import {
+  HandCoins,
   ClipboardCheck,
   FileText,
   House,
@@ -42,6 +43,7 @@ export const NAV = [
   { href: "/sale", label: "Shop sale", short: "Sell", icon: Store },
   { href: "/invoices", label: "Invoices", short: "Bills", icon: FileText },
   { href: "/money", label: "Money to collect", short: "Money", icon: IndianRupee, dues: true },
+  { href: "/suppliers", label: "Suppliers", short: "Suppliers", icon: HandCoins },
   { href: "/returns", label: "Returns & warranty", short: "Returns", icon: Undo2 },
   { href: "/batches", label: "Batches", short: "Batches", icon: Layers },
   { href: "/staff", label: "Staff", short: "Staff", icon: Users },
@@ -140,6 +142,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const status = useStore((s) => s.status);
   const user = useStore((s) => s.user);
+  const dataMode = useStore((s) => s.dataMode);
   const load = useStore((s) => s.load);
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -208,7 +211,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <div className="mt-auto space-y-3">
-          {can(user.role, "reset") && <ResetButton className="px-3 text-white/45 hover:text-white" />}
+          {can(user.role, "reset") && dataMode === "sample" && <ResetButton className="px-3 text-white/45 hover:text-white" />}
           <UserChip light />
         </div>
       </aside>
@@ -268,7 +271,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="mt-4">
             <UserChip />
           </div>
-          {can(user.role, "reset") && <ResetButton className="mx-auto mt-3 py-2 text-ink-3" />}
+          {can(user.role, "reset") && dataMode === "sample" && <ResetButton className="mx-auto mt-3 py-2 text-ink-3" />}
         </div>
       </Sheet>
 

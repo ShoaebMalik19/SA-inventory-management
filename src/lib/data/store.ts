@@ -18,11 +18,15 @@ import type {
   Role,
   ShopSale,
   Staff,
+  Supplier,
+  SupplierPayment,
   SupplierType,
+  DataMode,
 } from "./types";
 import * as api from "@/server/actions";
 import type { Patch } from "@/server/repo";
-import type { BuyerInput, CheckInput, NewMachine } from "@/server/service";
+import type { BuyerInput, CheckInput, ImportRow, NewMachine } from "@/server/service";
+import type { SupplierInput } from "@/server/suppliers";
 
 /**
  * Browser-side cache of what the server sent. Screens read from here.
@@ -49,6 +53,9 @@ type State = {
   buyers: Buyer[];
   invoices: Invoice[];
   payments: Payment[];
+  suppliers: Supplier[];
+  supplierPayments: SupplierPayment[];
+  dataMode: DataMode;
   lastSync: number;
 };
 
@@ -56,7 +63,21 @@ type Actions = {
   load: (quiet?: boolean) => Promise<void>;
   apply: (p: Patch) => void;
   signOut: () => Promise<void>;
-  addBatch: (i: { supplier: string; supplierType: SupplierType; totalCost: number; location: Location; items: NewMachineInput[] }) => Promise<{ ok: true; batchCode: string } | Fail>;
+  addBatch: (i: {
+    supplier: string;
+    supplierType: SupplierType;
+    totalCost: number;
+    location: Location;
+    items: NewMachineInput[];
+    billNo?: string;
+    payDays?: number;
+    paidNow?: number;
+    paidMode?: PaymentMode;
+  }) => Promise<{ ok: true; batchCode: string } | Fail>;
+  paySupplier: (i: { batchId: string; amount: number; mode: PaymentMode; reference?: string }) => Promise<{ ok: true } | Fail>;
+  saveSupplier: (s: SupplierInput & { id?: string }) => Promise<{ ok: true } | Fail>;
+  importStock: (i: { rows: ImportRow[]; alreadyPaid: boolean }) => Promise<{ ok: true; imported: number; batchCodes: string[] } | Fail>;
+  startLive: (confirm: string) => Promise<{ ok: true } | Fail>;
   checkMachine: (c: CheckInput) => Promise<{ ok: true } | Fail>;
   finishRepair: (id: string, part: string, cost: number, grade: Grade) => Promise<{ ok: true } | Fail>;
   moveMachines: (ids: string[], to: Location) => Promise<{ ok: true } | Fail>;
@@ -93,6 +114,9 @@ const EMPTY = {
   buyers: [],
   invoices: [],
   payments: [],
+  suppliers: [],
+  supplierPayments: [],
+  dataMode: "sample" as DataMode,
 };
 
 function merge<T extends { id: string }>(list: T[], updates: T[] | undefined, prepend = false): T[] {
@@ -153,6 +177,9 @@ export const useStore = create<State & Actions>()((set, get) => {
         buyers: p.buyers ?? s.buyers,
         invoices: merge(s.invoices, p.invoices, true),
         payments: merge(s.payments, p.payments),
+        suppliers: p.suppliers ?? s.suppliers,
+        supplierPayments: merge(s.supplierPayments, p.supplierPayments),
+        dataMode: p.dataMode ?? s.dataMode,
       }));
     },
 
@@ -185,5 +212,9 @@ export const useStore = create<State & Actions>()((set, get) => {
     saveBuyer: (b) => call(() => api.saveBuyer(b)),
     saveSettings: (s) => call(() => api.saveSettings(s)),
     resetDemo: () => call(() => api.resetDemoData()),
+    paySupplier: (i) => call(() => api.paySupplier(i)),
+    saveSupplier: (s) => call(() => api.saveSupplier(s)),
+    importStock: (i) => call(() => api.importStock(i)),
+    startLive: (confirm) => call(() => api.startLive({ confirm })),
   };
 });

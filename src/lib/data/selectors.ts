@@ -1,4 +1,4 @@
-import type { Batch, Grade, Invoice, Machine, Payment, Requirement, Stage } from "./types";
+import type { Batch, Grade, Invoice, Machine, Payment, Requirement, Stage, SupplierPayment } from "./types";
 import { specKey, STAGE_ORDER } from "./types";
 
 const GRADE_RANK: Record<Grade, number> = { A: 0, B: 1, C: 2 };
@@ -174,4 +174,67 @@ export function moneyToCollect(invoices: Invoice[], payments: Payment[]) {
     total: rows.reduce((s, r) => s + r.balance, 0),
     overdue: rows.reduce((s, r) => s + r.overdue, 0),
   };
+}
+
+/* ---------------- Money going out (suppliers) ---------------- */
+
+export function batchMoney(b: Batch, payments: SupplierPayment[]) {
+  const paid = Math.round(payments.filter((p) => p.batchId === b.id).reduce((s, p) => s + p.amount, 0) * 100) / 100;
+  const balance = Math.max(0, Math.round((b.totalCost - paid) * 100) / 100);
+  const due = b.dueDate ?? b.date;
+  const overdueDays = balance > 0.5 ? Math.floor((Date.now() - new Date(due).getTime()) / 86_400_000) : 0;
+  const status: InvoiceStatus = balance <= 0.5 ? "paid" : overdueDays > 0 ? "overdue" : paid > 0 ? "part" : "unpaid";
+  return { paid, balance, overdueDays: Math.max(0, overdueDays), status, due };
+}
+
+/** What we still owe suppliers, per supplier, overdue first. */
+export function owedToSuppliers(batches: Batch[], payments: SupplierPayment[]) {
+  type Row = { supplier: string; balance: number; overdue: number; bought: number; paid: number; batches: (Batch & ReturnType<typeof batchMoney>)[] };
+  const by = new Map<string, Row>();
+  for (const b of batches) {
+    const m = batchMoney(b, payments);
+    const row = by.get(b.supplier) ?? { supplier: b.supplier, balance: 0, overdue: 0, bought: 0, paid: 0, batches: [] };
+    row.bought += b.totalCost;
+    row.paid += m.paid;
+    row.balance += m.balance;
+    if (m.status === "overdue") row.overdue += m.balance;
+    row.batches.push({ ...b, ...m });
+    by.set(b.supplier, row);
+  }
+  const rows = [...by.values()].sort((a, b) => b.overdue - a.overdue || b.balance - a.balance || b.bought - a.bought);
+  rows.forEach((r) => r.batches.sort((a, b) => b.balance - a.balance || b.date.localeCompare(a.date)));
+  return {
+    rows,
+    total: rows.reduce((s, r) => s + r.balance, 0),
+    overdue: rows.reduce((s, r) => s + r.overdue, 0),
+  };
+}
+
+/* ---------------- Running low ---------------- */
+
+/** "i5 8th gen · 8 GB" — the way buyers ask for machines. */
+const shortSpec = (m: Pick<Machine, "cpu" | "gen" | "ram">) => `${m.cpu.replace("Core ", "")} ${m.gen}th gen · ${m.ram} GB`;
+
+/**
+ * Specs that sell steadily but have few machines ready (counting ones still being checked).
+ * "Steady" = at least 4 sold in the last 30 days. "Low" = fewer ready than about two weeks of sales.
+ */
+export function runningLow(machines: Machine[], days = 30) {
+  const since = Date.now() - days * 86_400_000;
+  const sold = new Map<string, number>();
+  const ready = new Map<string, number>();
+  const coming = new Map<string, number>();
+  for (const m of machines) {
+    const k = `${m.type === "Desktop" ? "Desktop " : ""}${shortSpec(m)}`;
+    if (m.stage === "sold") {
+      const at = [...m.history].reverse().find((h) => h.kind === "sold")?.at ?? m.updatedAt;
+      if (new Date(at).getTime() >= since) sold.set(k, (sold.get(k) ?? 0) + 1);
+    } else if (m.stage === "ready") ready.set(k, (ready.get(k) ?? 0) + 1);
+    else if (m.stage === "checking" || m.stage === "repair") coming.set(k, (coming.get(k) ?? 0) + 1);
+  }
+  return [...sold.entries()]
+    .filter(([, n]) => n >= 4)
+    .map(([spec, n]) => ({ spec, sold: n, ready: ready.get(spec) ?? 0, coming: coming.get(spec) ?? 0, daysLeft: Math.floor(((ready.get(spec) ?? 0) / n) * days) }))
+    .filter((r) => r.daysLeft < 14)
+    .sort((a, b) => a.daysLeft - b.daysLeft || b.sold - a.sold);
 }

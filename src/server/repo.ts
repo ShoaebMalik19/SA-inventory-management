@@ -15,6 +15,9 @@ import type {
   Role,
   ShopSale,
   Staff,
+  Supplier,
+  SupplierPayment,
+  DataMode,
 } from "@/lib/data/types";
 import { can } from "@/lib/roles";
 
@@ -31,6 +34,9 @@ export type Snapshot = {
   buyers: Buyer[];
   invoices: Invoice[];
   payments: Payment[];
+  suppliers: Supplier[];
+  supplierPayments: SupplierPayment[];
+  dataMode: DataMode;
 };
 
 /** Changes sent back after an action; the browser merges them in by id. */
@@ -107,6 +113,8 @@ const toBatch = (r: Row): Batch => ({
   totalCost: Number(r.total_cost),
   count: Number(r.count),
   note: (r.note as string) ?? undefined,
+  billNo: (r.bill_no as string) ?? undefined,
+  dueDate: iso(r.due_date),
 });
 
 export async function batchesByIds(q: Q, ids?: string[]) {
@@ -193,6 +201,8 @@ export async function staffList(q: Q): Promise<Staff[]> {
 export async function loadSnapshot(q: Q): Promise<Snapshot> {
   const { getSettings, listBuyers, invoicesByIds, paymentsFor } = await import("./billing");
   const [settings, buyers, invoices, payments] = [await getSettings(q), await listBuyers(q), await invoicesByIds(q), await paymentsFor(q)];
+  const { listSuppliers, supplierPaymentsFor, getDataMode } = await import("./suppliers");
+  const [suppliers, supplierPayments, dataMode] = [await listSuppliers(q), await supplierPaymentsFor(q), await getDataMode(q)];
   const [mRows, hist, batches, orders, sales, returns, activity, staff] = await Promise.all([
     q.query<Row>("select * from machines"),
     historyFor(q),
@@ -215,6 +225,9 @@ export async function loadSnapshot(q: Q): Promise<Snapshot> {
     buyers,
     invoices,
     payments,
+    suppliers,
+    supplierPayments,
+    dataMode,
   };
 }
 
@@ -235,5 +248,7 @@ export function forRole<T extends Partial<Snapshot>>(data: T, role: Role): T {
     out.payments = out.payments.filter((p) => ids.has(p.invoiceId));
   } else delete out.payments;
   delete out.buyers;
+  delete out.suppliers;
+  delete out.supplierPayments;
   return out;
 }

@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { useStore } from "@/lib/data/store";
-import { batchSummary } from "@/lib/data/selectors";
+import { batchMoney, batchSummary } from "@/lib/data/selectors";
+import { MoneyPill } from "@/components/money-pill";
 import { STAGE_ORDER, STAGES } from "@/lib/data/types";
 import { PageHeader } from "@/components/page-header";
 import { STAGE_STYLE } from "@/components/stage";
@@ -13,6 +14,7 @@ import { cn } from "@/lib/utils";
 export default function BatchesPage() {
   const batches = useStore((s) => s.batches);
   const machines = useStore((s) => s.machines);
+  const supplierPayments = useStore((s) => s.supplierPayments);
   const [open, setOpen] = useState<string | null>(null);
 
   const rows = useMemo(
@@ -35,6 +37,7 @@ export default function BatchesPage() {
           const recovered = Math.min(100, Math.round((s.revenue / Math.max(s.spent, 1)) * 100));
           const expected = s.profitSoFar + s.unsoldAsking;
           const isOpen = open === b.id;
+          const owed = batchMoney(b, supplierPayments);
           return (
             <li key={b.id} className="overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface">
               <button onClick={() => setOpen(isOpen ? null : b.id)} className="w-full p-5 text-left sm:p-6">
@@ -43,6 +46,7 @@ export default function BatchesPage() {
                     <div className="flex items-center gap-2.5">
                       <span className="rounded-md bg-ink px-2 py-0.5 font-mono text-[12.5px] text-white">{b.code}</span>
                       <h2 className="truncate font-display text-lg font-bold">{b.supplier}</h2>
+                      {owed.status !== "paid" && <MoneyPill status={owed.status} overdueDays={owed.overdueDays} />}
                     </div>
                     <p className="mt-1 text-sm text-ink-2">
                       {b.supplierType} · bought {shortDate(b.date)} · {count(b.count)} machines for {rupees(b.totalCost)}
@@ -84,7 +88,7 @@ export default function BatchesPage() {
               {isOpen && (
                 <div className="grid gap-px border-t border-line bg-line sm:grid-cols-4">
                   {[
-                    ["Paid for the batch", rupees(b.totalCost)],
+                    ["Batch cost", `${rupees(b.totalCost)}${owed.balance > 0.5 ? ` · ${rupees(owed.balance)} still to pay` : " · paid"}`],
                     ["Repairs & upgrades", rupees(s.repair)],
                     ["Earned from sales", rupees(s.revenue)],
                     ["Unsold stock (asking price)", rupees(s.unsoldAsking)],

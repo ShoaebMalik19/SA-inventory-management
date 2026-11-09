@@ -41,7 +41,7 @@ only this app's server talks to the database.
 
 | Screen | What it does |
 | --- | --- |
-| Home | Machines ready to sell, where all stock is, money in the last 30 days, what needs attention, who did what |
+| Home | Machines ready to sell, where all stock is, money in and owed, what needs attention (incl. specs running low), who did what |
 | All machines | Every machine by serial — search, filter, camera scan, Excel download, tick many to move or label |
 | Ready stock | Ready machines by spec × grade, plus "A buyer is asking — can you fill it?" |
 | Check & grade | Test → battery → upgrade → grade → wipe. Opens the next machine automatically. Repairs too |
@@ -50,6 +50,8 @@ only this app's server talks to the database.
 | Shop sale | Sells one machine, blocks machines booked for big orders, records cash/UPI/card, prints the GST bill with warranty |
 | Invoices | Every bill with FY numbering (SA/26-27/0001), printable A4 GST invoice, serial list annexure, monthly Excel for the accountant |
 | Money to collect | What each buyer still owes, overdue first, record payments as they come in |
+| Suppliers | What you owe each supplier per purchase batch, due dates, overdue first, record payments you make |
+| Import stock | Bring in the stock the shop already has from its own Excel sheet — any column names, with status, grade, location, prices, supplier and date. Shows what it read before saving |
 | Returns & warranty | Warranty check by serial, record a return with reason and refund — the machine goes back to checking |
 | Labels | Printable labels with a real Code-128 barcode of the serial, for one machine or a whole batch |
 | Batches | Money back, profit so far and expected profit for every purchase batch |
@@ -57,6 +59,13 @@ only this app's server talks to the database.
 | Settings | Shop name, address, GSTIN, state, invoice prefix, GST scheme (margin or normal), rate, warranty |
 
 **GST:** second-hand laptops are billed under the margin scheme (Rule 32(5)) by default, so tax is only on the selling price minus the buying price. Prices include GST. Buyers in Karnataka get CGST + SGST; buyers in other states get IGST. The working is shown to owner and manager only and never printed. Ask the shop's accountant to confirm the scheme before the first real bill.
+
+## Starting with the shop's real data
+
+1. Log in as the owner and open **Import stock** (from the banner on Home, or the link on Add stock).
+2. **Clear sample data** — type START. Staff, PINs and business settings stay; bill numbers restart at 0001. After this, "Reset sample data" disappears so real data can't be overwritten.
+3. Upload the shop's stock sheet. Check the preview (columns read, rows that need fixing, totals) and press **Bring in**.
+4. Change the four demo PINs on the Staff page and add the GSTIN in Settings.
 
 ## How it's built
 
