@@ -38,6 +38,15 @@ async function run<X extends object>(
 /* ---- login ---- */
 
 export async function login(staffId: string, pin: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    return await checkPin(staffId, pin);
+  } catch (e) {
+    console.error("login failed", e);
+    return { ok: false, error: "The server is busy. Please try again in a moment." };
+  }
+}
+
+async function checkPin(staffId: string, pin: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const db = await getDb();
   const rows = await db.query<{ id: string; pin_hash: string; active: boolean }>("select id, pin_hash, active from staff where id=$1", [staffId]);
   const s = rows[0];

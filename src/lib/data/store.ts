@@ -153,7 +153,13 @@ export const useStore = create<State & Actions>()((set, get) => {
     load: async (quiet) => {
       if (!quiet) set({ status: get().status === "ready" ? "ready" : "loading" });
       try {
-        const res = await fetch("/api/snapshot", { cache: "no-store" });
+        // never spin forever: give the server 30 s, and try once more if the first attempt fails
+        const get1 = () => fetch("/api/snapshot", { cache: "no-store", signal: AbortSignal.timeout(30_000) });
+        let res = await get1().catch(() => null);
+        if (!res?.ok) {
+          await new Promise((r) => setTimeout(r, 1500));
+          res = await get1();
+        }
         if (!res.ok) throw new Error();
         const { user, data, engine } = await res.json();
         if (!user) return set({ status: "signed-out", user: null, ...EMPTY });

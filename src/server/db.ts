@@ -10,7 +10,52 @@ import { SCHEMA_SQL } from "./schema";
 export type Q = {
   query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]>;
 };
-export type Db = Q & { tx<R>(fn: (q: Q) => Promise<R>): Promise<R>; engine: "postgres" | "embedded" };
+export type Db = Q & { tx<R>(fn: (q: Q) => Promise<R>): Promise<R>; engine: "postgres" | "embedded"; close?: () => Promise<void> };
+
+/**
+ * Supabase's transaction pooler (port 6543) can mix up the replies to queries that run side by side
+ * ("server sent a message with an invalid length"), after which the connection hangs.
+ * Its session pooler (port 5432, same host) keeps one real connection per client and doesn't.
+ */
+function sessionPoolerUrl(url: string) {
+  try {
+    const u = new URL(url);
+    if (u.hostname.endsWith(".pooler.supabase.com") && u.port === "6543") u.port = "5432";
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+export class DbTimeout extends Error {}
+
+/**
+ * Never wait forever on the database. If a query hangs, drop the whole connection pool
+ * so the next request starts with fresh connections instead of queueing behind a dead one.
+ */
+function limit<R>(p: Promise<R>, what: string, ms = 20_000): Promise<R> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      console.error(`Database did not answer in ${ms / 1000}s (${what.slice(0, 60)}); reconnecting`);
+      void resetDb();
+      reject(new DbTimeout("The database took too long to answer. Please try again."));
+    }, ms);
+  });
+  const watched = p.catch((e: { code?: string }) => {
+    // a broken connection never heals by itself — start over on the next request
+    if (/^(CONNECTION_|PROTOCOL_|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE)/.test(String(e?.code ?? ""))) void resetDb();
+    throw e;
+  });
+  return Promise.race([watched, timeout]).finally(() => clearTimeout(timer)) as Promise<R>;
+}
+
+async function resetDb() {
+  const pending = g.__saDb;
+  g.__saDb = undefined;
+  const db = await pending?.catch(() => undefined);
+  await db?.close?.().catch(() => undefined);
+}
 
 type G = { __saDb?: Promise<Db> };
 const g = globalThis as G;
@@ -19,16 +64,22 @@ async function connect(): Promise<Db> {
   const url = process.env.DATABASE_URL;
   if (url) {
     const postgres = (await import("postgres")).default;
-    // prepare:false keeps it working behind Supabase's connection pooler
-    const sql = postgres(url, { prepare: false, max: 5, idle_timeout: 20 });
+    const sql = postgres(sessionPoolerUrl(url), {
+      prepare: false, // works behind any Supabase pooler
+      max: 3,
+      idle_timeout: 20,
+      connect_timeout: 10,
+      max_lifetime: 60 * 10,
+    });
     type Unsafe = { unsafe: (text: string, params?: never[]) => PromiseLike<unknown> };
     const wrap = (s: Unsafe): Q => ({
-      query: async (text, params = []) => (await s.unsafe(text, params as never[])) as never,
+      query: (text, params = []) => limit(Promise.resolve(s.unsafe(text, params as never[])) as never, text),
     });
     return {
       engine: "postgres",
       ...wrap(sql as unknown as Unsafe),
-      tx: (fn) => sql.begin((t) => fn(wrap(t as unknown as Unsafe))) as never,
+      tx: (fn) => limit(Promise.resolve(sql.begin((t) => fn(wrap(t as unknown as Unsafe)))) as never, "transaction", 45_000),
+      close: () => sql.end({ timeout: 0 }),
     };
   }
 
