@@ -1,6 +1,6 @@
 import { after, connection } from "next/server";
 import { lastBackupAt, makeBackup } from "@/server/backups";
-import { verifyPin } from "@/server/pin";
+import { verifyPinAsync } from "@/server/pin";
 import { currentUser } from "@/server/auth";
 import { getDb } from "@/server/db";
 import { forRole, loadSnapshot } from "@/server/repo";
@@ -21,13 +21,12 @@ export async function GET() {
     if (user.role === "owner") {
       const easy = ["1111", "2222", "3333", "4444", "0000", "1234"];
       const rows = await db.query<{ name: string; pin_hash: string }>("select name, pin_hash from staff where active");
-      weakPins = rows
-        .filter((r) => {
-          // checking a PIN is slow on purpose, so remember the answer for each stored PIN
-          if (!weakCache.has(r.pin_hash)) weakCache.set(r.pin_hash, easy.some((p) => verifyPin(p, r.pin_hash)));
-          return weakCache.get(r.pin_hash);
-        })
-        .map((r) => r.name);
+      await Promise.all(
+        rows
+          .filter((r) => !weakCache.has(r.pin_hash))
+          .map(async (r) => weakCache.set(r.pin_hash, (await Promise.all(easy.map((p) => verifyPinAsync(p, r.pin_hash)))).some(Boolean))),
+      );
+      weakPins = rows.filter((r) => weakCache.get(r.pin_hash)).map((r) => r.name);
     }
     // safety net if the nightly job was missed: make the day's copy after answering
     if (!lastBackup || Date.now() - new Date(lastBackup).getTime() > 26 * 3_600_000)

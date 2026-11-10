@@ -181,7 +181,7 @@ export async function createInvoice(
   await q.query(
     `insert into invoices (id, number, fy, date, kind, ref_id, ref_code, buyer_name, buyer_phone, buyer_gstin, buyer_state, buyer_address,
       intra, scheme, rate, lines, taxable, cgst, sgst, igst, total, due_date, by_name)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::text::jsonb,$17,$18,$19,$20,$21,$22,$23)`,
     [
       id, number, fy, date.toISOString(), a.kind, a.refId, a.refCode, a.buyer.name, a.buyer.phone ?? null, a.buyer.gstin ?? null,
       a.buyer.state, a.buyer.address ?? null, intra, s.gstScheme, s.gstRate, JSON.stringify(lines), t.taxable, t.cgst, t.sgst, t.igst,

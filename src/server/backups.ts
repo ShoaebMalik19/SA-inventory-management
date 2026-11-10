@@ -117,7 +117,7 @@ export async function restoreAll(q: Q, f: BackupFile) {
   for (const t of TABLES) {
     const rows = f.tables[t] ?? [];
     for (let i = 0; i < rows.length; i += 2000) {
-      await q.query(`insert into ${t} select * from json_populate_recordset(null::${t}, $1::json)`, [JSON.stringify(rows.slice(i, i + 2000))]);
+      await q.query(`insert into ${t} select * from json_populate_recordset(null::${t}, $1::text::json)`, [JSON.stringify(rows.slice(i, i + 2000))]);
     }
   }
   if (secret[0]) {

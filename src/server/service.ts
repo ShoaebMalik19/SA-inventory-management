@@ -336,7 +336,7 @@ export async function createOrder(
   const code = await nextCode(q, "order_code_seq", "BO");
   const need = { ...a.need, qty: picked.length };
   await q.query(
-    "insert into orders (id, code, buyer, created_at, status, need, unit_price) values ($1,$2,$3,now(),'booked',$4,$5)",
+    "insert into orders (id, code, buyer, created_at, status, need, unit_price) values ($1,$2,$3,now(),'booked',$4::text::jsonb,$5)",
     [id, code, a.buyer.trim(), JSON.stringify(need), Math.round(a.unitPrice)],
   );
   const ids = picked.map((m) => m.id);
