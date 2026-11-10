@@ -1,9 +1,9 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
-import { Ban, CheckCircle2, Printer, ScanLine, Store } from "lucide-react";
+import { Ban, CheckCircle2, MessageCircle, Printer, ScanLine, Store } from "lucide-react";
 import { can } from "@/lib/roles";
 import { useStore } from "@/lib/data/store";
 import { PAYMENT_MODES, type Machine, type PaymentMode, type ShopSale } from "@/lib/data/types";
@@ -51,10 +51,27 @@ export function SaleView({ initialId }: { initialId?: string }) {
       .slice(0, 8);
   }, [machines, query]);
 
+  const step2 = useRef<HTMLElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   const choose = (m: Machine) => {
     setSelectedId(m.id);
     setPrice(m.price || "");
     setQ("");
+    navigator.vibrate?.(30);
+    // on a phone, move straight on to the customer's details
+    if (m.stage === "ready" && window.matchMedia("(max-width: 1023px)").matches)
+      setTimeout(() => {
+        step2.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        nameRef.current?.focus({ preventScroll: true });
+      }, 250);
+  };
+  const onScan = (t: string) => {
+    const hit = machines.find((m) => m.serial.toLowerCase() === t.toLowerCase());
+    if (hit) choose(hit);
+    else {
+      navigator.vibrate?.([80, 60, 80]);
+      toast.error(`No machine with serial ${t}`);
+    }
   };
 
   const [busy, setBusy] = useState(false);
@@ -101,14 +118,18 @@ export function SaleView({ initialId }: { initialId?: string }) {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && results[0]) choose(results[0]);
               }}
-              placeholder="Scan the serial, or type a model like “T480”"
+              placeholder="Serial, or a model like “T480”"
+              autoCorrect="off"
+              autoComplete="off"
+              spellCheck={false}
+              enterKeyHint="search"
               className="h-14 rounded-2xl pl-12 text-[16px]"
             />
             {results.length > 0 && (
               <ul className="absolute inset-x-0 top-full z-20 mt-2 overflow-hidden rounded-2xl border border-line bg-surface shadow-[0_18px_50px_-20px_rgba(15,42,38,.35)]">
                 {results.map((m) => (
                   <li key={m.id}>
-                    <button onClick={() => choose(m)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-mist">
+                    <button onClick={() => choose(m)} className="flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left hover:bg-mist">
                       <GradeBadge grade={m.grade} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-semibold">
@@ -125,14 +146,7 @@ export function SaleView({ initialId }: { initialId?: string }) {
               </ul>
             )}
           </div>
-          <ScanButton
-            className="h-14 rounded-2xl"
-            onScan={(t) => {
-              const hit = machines.find((m) => m.serial.toLowerCase() === t.toLowerCase());
-              if (hit) choose(hit);
-              else toast.error(`No machine with serial ${t}`);
-            }}
-          />
+          <ScanButton className="h-14 rounded-2xl" onScan={onScan} />
           </div>
 
           {!selected ? (
@@ -175,17 +189,17 @@ export function SaleView({ initialId }: { initialId?: string }) {
           )}
         </section>
 
-        <section className="rounded-[var(--radius-panel)] border border-line bg-surface p-5 sm:p-6 lg:self-start">
+        <section ref={step2} className="scroll-mt-20 rounded-[var(--radius-panel)] border border-line bg-surface p-5 sm:p-6 lg:self-start">
           <h2 className="font-display text-lg font-bold">2. Customer & price</h2>
           <div className="mt-4 space-y-3">
             <Field label="Customer name">
-              <Input value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="Full name" />
+              <Input ref={nameRef} value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="Full name" autoCapitalize="words" autoComplete="off" enterKeyHint="next" />
             </Field>
             <Field label="Phone number" hint="10 digits. Used for the warranty.">
-              <Input inputMode="numeric" value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="98450 00000" />
+              <Input type="tel" inputMode="numeric" autoComplete="off" enterKeyHint="next" value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="98450 00000" />
             </Field>
             <Field label="Selling price (₹)" hint={selected?.price ? `Asking price: ${rupees(selected.price)}` : undefined}>
-              <Input type="number" value={price} onChange={(e) => setPrice(e.target.value === "" ? "" : +e.target.value)} />
+              <Input type="number" inputMode="numeric" enterKeyHint="done" value={price} onChange={(e) => setPrice(e.target.value === "" ? "" : +e.target.value)} />
             </Field>
             <Field label="Warranty">
               <div className="grid grid-cols-3 gap-2">
@@ -194,7 +208,7 @@ export function SaleView({ initialId }: { initialId?: string }) {
                     key={w}
                     onClick={() => setWarranty(w)}
                     className={cn(
-                      "h-11 rounded-[11px] border text-sm font-semibold",
+                      "h-12 rounded-[11px] border text-sm font-semibold sm:h-11",
                       warranty === w ? "border-brand bg-brand-soft text-brand-deep" : "border-line text-ink-2",
                     )}
                   >
@@ -204,13 +218,13 @@ export function SaleView({ initialId }: { initialId?: string }) {
               </div>
             </Field>
             <Field label="Paid by">
-              <div className="flex flex-wrap gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                 {PAYMENT_MODES.filter((m) => m !== "Cheque").map((m) => (
                   <button
                     key={m}
                     onClick={() => setMode(m)}
                     className={cn(
-                      "h-10 rounded-[11px] border px-3.5 text-sm font-semibold",
+                      "h-12 rounded-[11px] border px-3.5 text-sm font-semibold sm:h-10",
                       mode === m ? "border-brand bg-brand-soft text-brand-deep" : "border-line text-ink-2",
                     )}
                   >
@@ -233,11 +247,30 @@ export function SaleView({ initialId }: { initialId?: string }) {
               </p>
             ) : null}
           </div>
-          <Button size="lg" className="mt-5 w-full" disabled={!canSell || busy} onClick={sell}>
+          <Button size="lg" className="mt-5 hidden w-full lg:inline-flex" disabled={!canSell || busy} onClick={sell}>
             <Store /> Complete sale{price ? ` — ${rupees(price)}` : ""}
           </Button>
         </section>
       </div>
+
+      {/* phone: the next step is always at the thumb */}
+      <div className="fixed inset-x-0 bottom-[calc(62px+env(safe-area-inset-bottom))] z-20 border-t border-line bg-surface/95 px-4 py-2.5 backdrop-blur lg:hidden">
+        {!selected || selected.stage !== "ready" ? (
+          <ScanButton className="h-13 w-full justify-center rounded-2xl py-3.5 text-[16px]" label="Scan the machine" onScan={onScan} />
+        ) : (
+          <>
+            <Button size="lg" className="h-13 w-full rounded-2xl text-[16px]" disabled={!canSell || busy} onClick={sell}>
+              <Store /> {busy ? "Saving…" : `Complete sale${price ? ` — ${rupees(price)}` : ""}`}
+            </Button>
+            {!canSell && (
+              <p className="mt-1 text-center text-[12.5px] text-ink-3">
+                Still needed: {[!customer.trim() && "name", !/^\d{10}$/.test(phone.trim()) && "10-digit phone", !price && "price"].filter(Boolean).join(", ")}
+              </p>
+            )}
+          </>
+        )}
+      </div>
+      <div className="h-24 lg:hidden" aria-hidden />
 
       <section className="mt-5 rounded-[var(--radius-panel)] border border-line bg-surface p-5 sm:p-6">
         <h2 className="font-display text-lg font-bold">Recent shop sales</h2>
@@ -287,6 +320,13 @@ export function SaleView({ initialId }: { initialId?: string }) {
                   <Printer /> Print the bill
                 </Link>
               </Button>
+              {/^\d{10}$/.test(done.sale.phone) && (
+                <Button asChild size="lg" variant="outline">
+                  <a href={waLink(done.sale, settings?.businessName ?? "S.A Computers", settings?.phone ?? "")} target="_blank" rel="noreferrer">
+                    <MessageCircle /> Send bill details on WhatsApp
+                  </a>
+                </Button>
+              )}
               <Button size="lg" variant="outline" onClick={() => setDone(null)}>
                 Next customer
               </Button>
@@ -296,4 +336,10 @@ export function SaleView({ initialId }: { initialId?: string }) {
       </Sheet>
     </div>
   );
+}
+
+function waLink(sale: ShopSale, shop: string, shopPhone: string) {
+  const until = new Date(new Date(sale.at).getTime() + sale.warrantyMonths * 30 * 86_400_000).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  const text = [`Thank you for buying from ${shop}!`, `Sale ${sale.code} · ${rupees(sale.price)}`, `Warranty until ${until}. Keep this message for warranty claims.`, shopPhone ? `${shop} · ${shopPhone}` : shop].join("\n");
+  return `https://wa.me/91${sale.phone}?text=${encodeURIComponent(text)}`;
 }

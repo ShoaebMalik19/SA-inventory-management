@@ -65,7 +65,7 @@ export default function MoneyPage() {
                         </a>
                       )}
                       {buyer && (
-                        <button onClick={() => setEditing(buyer)} className="ml-2 inline-flex items-center gap-1 text-ink-3 hover:text-brand">
+                        <button onClick={() => setEditing(buyer)} className="-my-2 ml-1 inline-flex min-h-11 items-center gap-1 px-1.5 text-ink-3 hover:text-brand">
                           <Pencil className="size-3.5" /> Edit
                         </button>
                       )}

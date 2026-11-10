@@ -1,7 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { can } from "@/lib/roles";
+import { Button } from "@/components/ui/button";
 import { useStore } from "@/lib/data/store";
 import { batchMoney, batchSummary } from "@/lib/data/selectors";
 import { MoneyPill } from "@/components/money-pill";
@@ -16,6 +19,15 @@ export default function BatchesPage() {
   const machines = useStore((s) => s.machines);
   const supplierPayments = useStore((s) => s.supplierPayments);
   const [open, setOpen] = useState<string | null>(null);
+  const role = useStore((s) => s.user?.role);
+  const removeBatch = useStore((s) => s.removeBatch);
+  const remove = async (id: string, code: string) => {
+    const reason = window.prompt(`Remove batch ${code} and all its machines? Only do this if it was added by mistake.\n\nWhy is it being removed?`, "Added by mistake");
+    if (!reason?.trim()) return;
+    const res = await removeBatch(id, reason.trim());
+    if (res.ok) toast.success(`Batch ${code} removed`, { description: "It is noted in History with your name." });
+    else toast.error(res.error);
+  };
 
   const rows = useMemo(
     () =>
@@ -104,6 +116,11 @@ export default function BatchesPage() {
                       {s.scrap / b.count > 0.06 ? " — higher than usual. Inspect this seller's next lot before paying." : " — normal for this kind of lot."}
                       {b.note && <span className="ml-1 text-ink-3">Note: {b.note}</span>}
                     </p>
+                    {can(role, "fixMistakes") && s.counts.checking === b.count && (
+                      <Button variant="outline" size="sm" className="mt-3 text-st-scrap" onClick={() => remove(b.id, b.code)}>
+                        <Trash2 /> Remove this batch (added by mistake)
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}

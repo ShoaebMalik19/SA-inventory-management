@@ -144,9 +144,10 @@ export const isOlderThan = (m: Machine, days: number) => new Date(m.addedAt).get
 /* ---------------- Money ---------------- */
 
 
-export type InvoiceStatus = "paid" | "part" | "unpaid" | "overdue";
+export type InvoiceStatus = "paid" | "part" | "unpaid" | "overdue" | "cancelled";
 
 export function invoiceMoney(inv: Invoice, payments: Payment[]) {
+  if (inv.cancelledAt) return { paid: 0, balance: 0, overdueDays: 0, status: "cancelled" as InvoiceStatus };
   const paid = Math.round(payments.filter((p) => p.invoiceId === inv.id).reduce((s, p) => s + p.amount, 0) * 100) / 100;
   const balance = Math.max(0, Math.round((inv.total - paid) * 100) / 100);
   const overdueDays = balance > 0.5 ? Math.floor((Date.now() - new Date(inv.dueDate).getTime()) / 86_400_000) : 0;

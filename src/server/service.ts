@@ -62,11 +62,11 @@ import { TABLES_IN_DELETE_ORDER } from "./schema";
 
 export class UserError extends Error {}
 
-const uid = (p: string) => `${p}${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
+export const uid = (p: string) => `${p}${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
 const now = () => new Date().toISOString();
 const rs = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
 
-async function event(q: Q, machineId: string, text: string, kind: HistoryEvent["kind"], by: Staff) {
+export async function event(q: Q, machineId: string, text: string, kind: HistoryEvent["kind"], by: Staff) {
   await q.query("insert into machine_events (machine_id, at, text, kind, by_name) values ($1, now(), $2, $3, $4)", [
     machineId,
     text,
@@ -84,9 +84,9 @@ async function events(q: Q, ids: string[], text: string, kind: HistoryEvent["kin
   );
 }
 
-async function activity(q: Q, text: string, kind: Activity["kind"], by: Staff) {
+export async function activity(q: Q, text: string, kind: Activity["kind"], by: Staff, detail?: string) {
   const id = uid("a");
-  await q.query("insert into activity (id, at, text, kind, by_name) values ($1, now(), $2, $3, $4)", [id, text, kind, by.name]);
+  await q.query("insert into activity (id, at, text, kind, by_name, detail) values ($1, now(), $2, $3, $4, $5)", [id, text, kind, by.name, detail ?? null]);
   return id;
 }
 
@@ -95,7 +95,7 @@ async function nextCode(q: Q, seq: string, prefix: string) {
   return `${prefix}-${rows[0].n}`;
 }
 
-async function lockMachine(q: Q, id: string) {
+export async function lockMachine(q: Q, id: string) {
   const rows = await q.query<Record<string, unknown>>("select * from machines where id = $1 for update", [id]);
   if (!rows[0]) throw new UserError("This machine doesn't exist any more. Refresh and try again.");
   return rows[0];

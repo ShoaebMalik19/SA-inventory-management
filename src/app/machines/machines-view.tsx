@@ -396,12 +396,17 @@ function Tick({ on, onClick, label }: { on: boolean; onClick: () => void; label:
       aria-checked={on}
       aria-label={label}
       onClick={onClick}
-      className={cn(
-        "grid size-[22px] shrink-0 place-items-center rounded-md border-2 transition",
-        on ? "border-brand bg-brand text-white" : "border-line bg-surface hover:border-ink-3",
-      )}
+      className="group -m-2.5 grid size-11 shrink-0 place-items-center"
     >
-      {on && <Check className="size-3.5" strokeWidth={3} />}
+      {/* the box is small, the place you can tap is big enough for a thumb */}
+      <span
+        className={cn(
+          "grid size-[22px] place-items-center rounded-md border-2 transition",
+          on ? "border-brand bg-brand text-white" : "border-line bg-surface group-hover:border-ink-3",
+        )}
+      >
+        {on && <Check className="size-3.5" strokeWidth={3} />}
+      </span>
     </button>
   );
 }

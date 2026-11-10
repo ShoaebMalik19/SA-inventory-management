@@ -40,7 +40,10 @@ export function CheckView({ initialId }: { initialId?: string }) {
   const findBySerial = (value?: string) => {
     const s = (value ?? scan).trim().toLowerCase();
     const m = machines.find((x) => x.serial.toLowerCase() === s);
-    if (!m) return toast.error("No machine with this serial number. Check the number and try again.");
+    if (!m) {
+      navigator.vibrate?.([80, 60, 80]);
+      return toast.error("No machine with this serial number. Check the number and try again.");
+    }
     if (m.stage !== "checking" && m.stage !== "repair") return toast.info(`This machine is already checked. Status: ${m.stage === "ready" ? "Ready to sell" : m.stage}.`);
     setTab(m.stage);
     setActiveId(m.id);
@@ -54,34 +57,47 @@ export function CheckView({ initialId }: { initialId?: string }) {
         sub="Test each machine, give it a grade, and it moves to ready stock. Oldest arrivals are at the top."
       />
 
-      <div className="flex flex-col gap-3 sm:flex-row">
+      <div className="flex gap-2 sm:gap-3">
         <div className="relative flex-1">
           <ScanLine className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-ink-3" />
           <Input
             value={scan}
             onChange={(e) => setScan(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && findBySerial()}
-            placeholder="Scan or type the serial number on the machine"
-            className="h-14 rounded-2xl pl-12 text-[16px]"
+            placeholder="Type or scan the serial"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            autoComplete="off"
+            spellCheck={false}
+            enterKeyHint="go"
+            className="h-14 rounded-2xl pl-12 font-mono text-[16px] placeholder:font-sans"
           />
         </div>
-        <Button size="lg" className="h-14 rounded-2xl" onClick={() => findBySerial()} disabled={!scan.trim()}>
-          Open machine
+        <Button size="lg" className="h-14 rounded-2xl px-4 sm:px-5" onClick={() => findBySerial()} disabled={!scan.trim()}>
+          Open
         </Button>
-        <ScanButton className="h-14 justify-center rounded-2xl" label="Scan with camera" onScan={(t) => findBySerial(t)} />
+        <ScanButton className="hidden h-14 justify-center rounded-2xl sm:flex" label="Scan with camera" onScan={(t) => findBySerial(t)} />
       </div>
 
-      <div className="mt-5 inline-flex rounded-xl border border-line bg-surface p-1">
+      {/* phone: the scan button sits where the thumb is */}
+      <div className="fixed inset-x-4 bottom-[calc(70px+env(safe-area-inset-bottom))] z-20 sm:hidden">
+        <ScanButton
+          className="h-14 w-full justify-center rounded-2xl text-[16px] shadow-[0_14px_40px_-12px_rgba(10,61,52,.7)]"
+          label={`Scan next machine${waiting ? ` · ${count(waiting)} waiting` : ""}`}
+          onScan={(t) => findBySerial(t)}
+        />
+      </div>
+      <div className="mt-5 grid grid-cols-2 rounded-xl border border-line bg-surface p-1 sm:inline-grid">
         {(
           [
-            ["checking", `Waiting for check (${count(waiting)})`],
+            ["checking", `Waiting (${count(waiting)})`],
             ["repair", `In repair (${count(inRepair)})`],
           ] as [Tab, string][]
         ).map(([t, label]) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={cn("rounded-lg px-4 py-2 text-sm font-semibold transition", tab === t ? "bg-ink text-white" : "text-ink-2 hover:text-ink")}
+            className={cn("min-h-11 rounded-lg px-4 text-sm font-semibold transition", tab === t ? "bg-ink text-white" : "text-ink-2 hover:text-ink")}
           >
             {label}
           </button>
@@ -126,6 +142,7 @@ export function CheckView({ initialId }: { initialId?: string }) {
         </ul>
       )}
       {queue.length > 60 && <p className="mt-3 text-center text-sm text-ink-3">+ {count(queue.length - 60)} more in the queue</p>}
+      <div className="h-20 sm:hidden" aria-hidden />
 
       <Sheet open={!!active} onOpenChange={(o) => !o && setActiveId(null)} title="Check machine">
         {active &&
@@ -188,6 +205,7 @@ function GradePicker({ grade, setGrade }: { grade: Grade | null; setGrade: (g: G
 
 function CheckForm({ m, remaining, onDone }: { m: Machine; remaining: number; onDone: () => void }) {
   const checkMachine = useStore((s) => s.checkMachine);
+  const undoCheck = useStore((s) => s.undoCheck);
   const tests = m.type === "Desktop" ? ["Boots up", "Ports", "Wi-Fi", "Power supply"] : FAIL_CHECKS;
   const [failed, setFailed] = useState<string[]>([]);
   const [battery, setBattery] = useState<number | "">(m.type === "Laptop" ? "" : "");
@@ -214,13 +232,25 @@ function CheckForm({ m, remaining, onDone }: { m: Machine; remaining: number; on
     });
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
+    navigator.vibrate?.(40);
     toast.success(
       outcome === "ready"
         ? `${m.model} is ready to sell — Grade ${grade}`
         : outcome === "repair"
           ? `${m.model} sent to repair`
           : `${m.model} marked as scrap`,
-      { description: remaining > 0 ? "Opening the next machine." : "That was the last one." },
+      {
+        description: remaining > 0 ? "Opening the next machine." : "That was the last one.",
+        duration: 8000,
+        action: {
+          label: "Undo",
+          onClick: async () => {
+            const r = await undoCheck(m.id);
+            if (r.ok) toast.success(`${m.model} is back in the queue`);
+            else toast.error(r.error);
+          },
+        },
+      },
     );
     onDone();
   };
@@ -238,7 +268,7 @@ function CheckForm({ m, remaining, onDone }: { m: Machine; remaining: number; on
                 key={t}
                 onClick={() => setFailed((f) => (bad ? f.filter((x) => x !== t) : [...f, t]))}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-semibold transition",
+                  "flex min-h-11 items-center gap-1.5 rounded-full border px-4 text-[14.5px] font-semibold transition",
                   bad ? "border-st-repair bg-st-repair-bg text-st-repair" : "border-line bg-surface text-ink-2",
                 )}
               >
@@ -261,7 +291,7 @@ function CheckForm({ m, remaining, onDone }: { m: Machine; remaining: number; on
                 key={b}
                 onClick={() => setBattery(b)}
                 className={cn(
-                  "rounded-xl border px-3.5 py-2 text-sm font-semibold",
+                  "h-11 min-w-[60px] rounded-xl border px-3.5 text-[15px] font-semibold",
                   battery === b ? "border-brand bg-brand-soft text-brand-deep" : "border-line",
                 )}
               >
@@ -273,6 +303,7 @@ function CheckForm({ m, remaining, onDone }: { m: Machine; remaining: number; on
               min={0}
               max={100}
               placeholder="Other %"
+              inputMode="numeric"
               value={battery}
               onChange={(e) => setBattery(e.target.value === "" ? "" : Math.min(100, +e.target.value))}
               className="w-28"
@@ -304,6 +335,7 @@ function CheckForm({ m, remaining, onDone }: { m: Machine; remaining: number; on
           <Field label="Cost ₹">
             <Input
               type="number"
+              inputMode="numeric"
               disabled={!upgraded}
               value={upgradeCost}
               placeholder="0"
@@ -388,7 +420,7 @@ function RepairForm({ m, onDone }: { m: Machine; onDone: () => void }) {
       <Step n={2} title="Grade the body">
         <GradePicker grade={grade} setGrade={setGrade} />
       </Step>
-      <div className="px-5 py-4">
+      <div className="sticky bottom-0 bg-surface/95 px-5 py-4 backdrop-blur">
         <Button
           size="lg"
           className="w-full"

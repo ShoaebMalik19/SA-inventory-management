@@ -123,7 +123,7 @@ export default function ImportPage() {
             <div>
               <p className="font-semibold text-ink">Needed for each machine</p>
               <p className="mt-1">Serial, brand, model, processor, RAM and storage. Status, grade, location, prices, supplier and date are used when present.</p>
-              <button onClick={downloadImportTemplate} className="mt-2 inline-flex items-center gap-2 font-semibold text-brand hover:underline">
+              <button onClick={downloadImportTemplate} className="mt-1 inline-flex min-h-11 items-center gap-2 font-semibold text-brand hover:underline">
                 <Download className="size-4" /> Download a template
               </button>
             </div>

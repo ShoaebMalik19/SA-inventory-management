@@ -40,7 +40,8 @@ export type Snapshot = {
 };
 
 /** Changes sent back after an action; the browser merges them in by id. */
-export type Patch = Partial<Snapshot> & { replaceAll?: Snapshot };
+export type Removed = { sales?: string[]; machines?: string[]; batches?: string[]; supplierPayments?: string[] };
+export type Patch = Partial<Snapshot> & { replaceAll?: Snapshot; removed?: Removed };
 
 const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : v ? new Date(String(v)).toISOString() : undefined);
 const num = (v: unknown) => (v === null || v === undefined ? undefined : Number(v));
@@ -178,7 +179,24 @@ const toActivity = (r: Row): Activity => ({
   text: r.text as string,
   kind: r.kind as Activity["kind"],
   by: (r.by_name as string) ?? undefined,
+  detail: (r.detail as string) ?? undefined,
 });
+
+/** Older activity, page by page, for the History screen. */
+export async function activityPage(q: Q, f: { before?: string; by?: string; kind?: string; search?: string; limit?: number }) {
+  const where: string[] = [];
+  const args: unknown[] = [];
+  if (f.before) { args.push(f.before); where.push(`at < $${args.length}`); }
+  if (f.by) { args.push(f.by); where.push(`by_name = $${args.length}`); }
+  if (f.kind) { args.push(f.kind); where.push(`kind = $${args.length}`); }
+  if (f.search?.trim()) { args.push(`%${f.search.trim()}%`); where.push(`(text ilike $${args.length} or detail ilike $${args.length})`); }
+  args.push(Math.min(200, f.limit ?? 100));
+  const rows = await q.query<Row>(
+    `select * from activity ${where.length ? "where " + where.join(" and ") : ""} order by at desc limit $${args.length}`,
+    args,
+  );
+  return rows.map(toActivity);
+}
 
 export async function salesByIds(q: Q, ids: string[]) {
   return (await q.query<Row>("select * from sales where id = any($1)", [ids])).map(toSale);

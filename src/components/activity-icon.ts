@@ -1,0 +1,50 @@
+import {
+  ArrowLeftRight,
+  ClipboardCheck,
+  DatabaseBackup,
+  Eraser,
+  HandCoins,
+  IndianRupee,
+  PackagePlus,
+  Settings,
+  Store,
+  Truck,
+  Undo2,
+  Users,
+  Wrench,
+} from "lucide-react";
+import type { Activity } from "@/lib/data/types";
+
+export const ACTIVITY_ICON: Record<Activity["kind"], typeof Truck> = {
+  batch: PackagePlus,
+  check: ClipboardCheck,
+  order: Truck,
+  dispatch: Truck,
+  sale: Store,
+  repair: Wrench,
+  return: Undo2,
+  move: ArrowLeftRight,
+  staff: Users,
+  payment: IndianRupee,
+  settings: Settings,
+  supplier: HandCoins,
+  fix: Eraser,
+  backup: DatabaseBackup,
+};
+
+export const ACTIVITY_LABEL: Record<Activity["kind"], string> = {
+  batch: "Stock in",
+  check: "Checks",
+  order: "Big orders",
+  dispatch: "Dispatch",
+  sale: "Shop sales",
+  repair: "Repairs",
+  return: "Returns",
+  move: "Moves",
+  staff: "Staff",
+  payment: "Payments",
+  settings: "Settings",
+  supplier: "Suppliers",
+  fix: "Corrections",
+  backup: "Backups",
+};

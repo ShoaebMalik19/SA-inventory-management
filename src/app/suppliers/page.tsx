@@ -75,7 +75,7 @@ export default function SuppliersPage() {
                       </a>
                     )}
                     {sup && (
-                      <button onClick={() => setEditing(sup)} className="ml-2 inline-flex items-center gap-1 text-ink-3 hover:text-brand">
+                      <button onClick={() => setEditing(sup)} className="-my-2 ml-1 inline-flex min-h-11 items-center gap-1 px-1.5 text-ink-3 hover:text-brand">
                         <Pencil className="size-3.5" /> Edit
                       </button>
                     )}
@@ -126,7 +126,7 @@ export default function SuppliersPage() {
               {done.length > 0 && open.length > 0 && (
                 <button
                   onClick={() => setShowPaid({ ...showPaid, [r.supplier]: !showPaid[r.supplier] })}
-                  className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-ink-3 hover:text-brand"
+                  className="mt-2 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-ink-3 hover:text-brand"
                 >
                   <ChevronDown className={cn("size-4 transition", showPaid[r.supplier] && "rotate-180")} />
                   {showPaid[r.supplier] ? "Hide" : "Show"} {done.length} paid batch{done.length === 1 ? "" : "es"}
@@ -135,7 +135,7 @@ export default function SuppliersPage() {
               {open.length === 0 && !showPaid[r.supplier] && (
                 <button
                   onClick={() => setShowPaid({ ...showPaid, [r.supplier]: true })}
-                  className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-ink-3 hover:text-brand"
+                  className="mt-2 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-ink-3 hover:text-brand"
                 >
                   <ChevronDown className="size-4" /> Show {done.length} batch{done.length === 1 ? "" : "es"}
                 </button>

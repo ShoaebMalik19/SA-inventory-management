@@ -50,3 +50,6 @@ export const ordinal = (n: number) => {
   const v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 };
+
+/** Hours since a moment (any number, may be fractional). */
+export const hoursSince = (iso: string) => (Date.now() - new Date(iso).getTime()) / 3_600_000;

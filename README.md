@@ -104,3 +104,24 @@ src/
    Sell a T480 → warranty slip. Then **Returns & warranty** → check that serial → record a return.
 7. Back as owner: the activity feed shows Salma's sale and return. **Batches** → which lots made money.
 8. Close: "Tell me how you do it today and I'll fit it to you."
+
+
+## Safety: backups, fixing mistakes, history
+
+- **Backups** (owner → *Backups*): a full copy of everything is saved every night at about 3 AM (Vercel cron calling `/api/cron/backup`; set `CRON_SECRET` in Vercel so only Vercel can call it). If a night is missed, the next time anyone opens the app a copy is made. 30 nightly + 15 hand-made copies are kept inside the database. Each copy can be downloaded as a `.json.gz` file and restored later from the list or from the file. A restore saves a "before restore" copy first, and is all-or-nothing.
+- **Download everything as Excel**: every machine, batch, sale, bill and payment in one workbook.
+- **Fixing mistakes** — every fix is written to the machine's history and to *History* with before → after:
+  - *Correct details* on any unsold machine (serial, specs, grade; cost and price for owner/manager).
+  - *Undo check* puts a machine back in the queue (technicians: within 30 minutes; also an *Undo* button on the toast right after checking).
+  - *Cancel this sale* on a shop bill (owner/manager): the bill keeps its number and gets a credit note `CN/26-27/0001`; the machine goes back to ready stock.
+  - *Remove this batch* (owner/manager) while none of its machines have been checked.
+- **History** (owner/manager): everything anyone did, filter by person and type, search, never editable.
+- **Easy PIN warning**: the owner's Home shows who still uses a starting PIN like 1111.
+
+## Reports
+
+*Reports* (owner/manager): month by month — machines sold, sales, profit, profit per machine (a running month is compared with the same days of last month), week-by-week chart, shop vs big orders, money collected and paid out, GST summary from the bills (with credit notes), best sellers, stock age with the slowest machines, supplier quality (scrap and repair rates), and who did the work. Downloads as Excel.
+
+## On a phone
+
+Add it to the home screen (Chrome: ⋮ → *Add to Home screen*; iPhone Safari: Share → *Add to Home Screen*) — it opens full-screen like an app. Each role gets its own four bottom tabs. Check & grade and Shop sale keep the main button at the bottom where the thumb is; the camera scanner has a torch button; text boxes don't zoom on iPhone; after a sale the bill details can be sent to the customer on WhatsApp.

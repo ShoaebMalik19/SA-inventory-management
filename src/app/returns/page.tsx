@@ -69,7 +69,11 @@ export default function ReturnsPage() {
             onChange={(e) => setSerial(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && check()}
             placeholder="Type or scan the serial number"
-            className="h-14 flex-1 rounded-2xl font-mono text-[16px]"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            enterKeyHint="search"
+            className="h-14 rounded-2xl font-mono text-[16px] sm:flex-1"
           />
           <Button size="lg" className="h-14 rounded-2xl" onClick={() => check()} disabled={!serial.trim()}>
             Check warranty

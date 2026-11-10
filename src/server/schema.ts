@@ -201,6 +201,25 @@ create table if not exists supplier_payments (
 );
 create index if not exists supplier_payments_batch_idx on supplier_payments(batch_id);
 
+-- fixing mistakes: a cancelled bill keeps its number and gets a credit note
+alter table invoices add column if not exists cancelled_at timestamptz;
+alter table invoices add column if not exists cancel_reason text;
+alter table invoices add column if not exists credit_note text;
+alter table activity add column if not exists detail text;
+create index if not exists activity_by_idx on activity(by_name, at desc);
+
+-- nightly and manual copies of everything, kept inside the database (gzip of JSON)
+create table if not exists backups (
+  id text primary key,
+  at timestamptz not null,
+  kind text not null check (kind in ('auto','manual','before-restore')),
+  by_name text,
+  size integer not null,
+  row_count integer not null,
+  data bytea not null
+);
+create index if not exists backups_at_idx on backups(at desc);
+
 create sequence if not exists batch_code_seq start 1101;
 create sequence if not exists order_code_seq start 1040;
 create sequence if not exists sale_code_seq start 2201;
@@ -224,6 +243,7 @@ alter table invoice_counters enable row level security;
 alter table payments enable row level security;
 alter table suppliers enable row level security;
 alter table supplier_payments enable row level security;
+alter table backups enable row level security;
 `;
 
 export const TABLES_IN_DELETE_ORDER = [

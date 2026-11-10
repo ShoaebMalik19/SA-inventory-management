@@ -167,7 +167,7 @@ export default function AddStockPage() {
                   <button
                     key={k}
                     onClick={() => setMode(k)}
-                    className={cn("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold", mode === k ? "bg-ink text-white" : "text-ink-2")}
+                    className={cn("flex min-h-10 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold", mode === k ? "bg-ink text-white" : "text-ink-2")}
                   >
                     <Icon className="size-4" /> {label}
                   </button>
@@ -299,7 +299,7 @@ function ExcelStep({
             e.target.value = "";
           }}
         />
-        <button onClick={() => downloadSampleSheet(200)} className="mt-3 flex items-center gap-2 text-sm font-semibold text-brand hover:underline">
+        <button onClick={() => downloadSampleSheet(200)} className="mt-1 flex min-h-11 items-center gap-2 text-sm font-semibold text-brand hover:underline">
           <Download className="size-4" /> Download a sample sheet (200 machines)
         </button>
       </div>

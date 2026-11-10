@@ -38,11 +38,12 @@ export function Sheet({
         >
           <Dialog.Title className="sr-only">{title}</Dialog.Title>
           {description && <Dialog.Description className="sr-only">{description}</Dialog.Description>}
-          <Dialog.Close className="absolute right-4 top-4 z-10 grid size-9 place-items-center rounded-full bg-mist text-ink-2 transition hover:bg-line hover:text-ink">
+          <Dialog.Close className="absolute right-3 top-3 z-10 grid size-11 sm:right-4 sm:top-4 sm:size-9 place-items-center rounded-full bg-mist text-ink-2 transition hover:bg-line hover:text-ink">
             <X className="size-4" />
             <span className="sr-only">Close</span>
           </Dialog.Close>
-          <div className="overflow-y-auto overscroll-contain">{children}</div>
+          <span aria-hidden className="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-line sm:hidden" />
+          <div className="overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]">{children}</div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

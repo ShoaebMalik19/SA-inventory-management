@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Camera } from "lucide-react";
+import { Camera, Flashlight } from "lucide-react";
 import { Sheet } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +37,8 @@ export function ScanButton({ onScan, className, label = "Scan" }: { onScan: (tex
 function Scanner({ onResult }: { onResult: (t: string) => void }) {
   const video = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState("");
+  const [torch, setTorch] = useState<null | ((on: boolean) => Promise<void>)>(null);
+  const [lit, setLit] = useState(false);
   const done = useRef(false);
   const cb = useRef(onResult);
   useEffect(() => {
@@ -61,6 +63,7 @@ function Scanner({ onResult }: { onResult: (t: string) => void }) {
           },
         );
         stop = () => controls.stop();
+        if (controls.switchTorch) setTorch(() => controls.switchTorch!);
       } catch {
         setError("The camera couldn't start. Allow camera access in the browser, or type the serial number instead.");
       }
@@ -78,6 +81,18 @@ function Scanner({ onResult }: { onResult: (t: string) => void }) {
           <div className="absolute inset-x-0 top-1/2 h-0.5 animate-pulse bg-tag/80" />
         </div>
       </div>
+      {torch && (
+        <button
+          type="button"
+          onClick={async () => {
+            await torch(!lit).catch(() => undefined);
+            setLit(!lit);
+          }}
+          className={cn("mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl border text-[15px] font-semibold", lit ? "border-tag bg-tag text-ink" : "border-line text-ink-2")}
+        >
+          <Flashlight className="size-5" /> {lit ? "Light on" : "Turn on the light"}
+        </button>
+      )}
       {error && <p className="mt-3 rounded-xl bg-st-repair-bg px-3.5 py-2.5 text-sm text-st-repair">{error}</p>}
     </div>
   );

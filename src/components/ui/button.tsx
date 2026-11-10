@@ -15,10 +15,10 @@ const buttonVariants = cva(
         danger: "bg-st-scrap text-white hover:brightness-110",
       },
       size: {
-        sm: "h-8 rounded-lg px-3 text-[13px]",
+        sm: "h-10 rounded-lg px-3.5 text-[13.5px] sm:h-8 sm:px-3 sm:text-[13px]",
         md: "h-10 rounded-[11px] px-4 text-sm",
         lg: "h-12 rounded-xl px-5 text-[15px]",
-        icon: "size-9 rounded-lg",
+        icon: "size-11 rounded-lg sm:size-9",
       },
     },
     defaultVariants: { variant: "primary", size: "md" },

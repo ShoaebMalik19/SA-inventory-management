@@ -17,7 +17,10 @@ import {
   ShieldCheck,
   Store,
   Undo2,
+  RotateCcw,
+  PenLine,
 } from "lucide-react";
+import { MachineEdit } from "@/components/machine-edit";
 import { useUI } from "@/lib/ui-store";
 import { useStore } from "@/lib/data/store";
 import { can } from "@/lib/roles";
@@ -40,6 +43,8 @@ const EVENT_DOT: Record<HistoryEvent["kind"], string> = {
   released: "bg-ink-3",
   sold: "bg-st-sold",
   returned: "bg-st-scrap",
+  edited: "bg-brand",
+  undone: "bg-st-checking",
 };
 
 export const RETURN_REASONS = ["Not working", "Battery problem", "Screen problem", "Keyboard problem", "Customer changed mind", "Wrong spec sent"];
@@ -67,6 +72,16 @@ function MachineDetail({ m }: { m: Machine }) {
   const [busy, setBusy] = useState(false);
   const [returning, setReturning] = useState(() => useUI.getState().machineMode === "return" && m.stage === "sold");
   const [editPrice, setEditPrice] = useState<number | "" | null>(null);
+  const [editing, setEditing] = useState(false);
+  const undoCheck = useStore((s) => s.undoCheck);
+  const undo = async () => {
+    if (!window.confirm("Put this machine back in “Waiting for check”? Its grade and asking price will be cleared.")) return;
+    setBusy(true);
+    const res = await undoCheck(m.id);
+    setBusy(false);
+    if (res.ok) toast.success("Check undone", { description: "The machine is waiting for check again." });
+    else toast.error(res.error);
+  };
 
   const move = async () => {
     const to = m.location === "Shop" ? "Godown" : "Shop";
@@ -206,6 +221,8 @@ function MachineDetail({ m }: { m: Machine }) {
 
       {returning ? (
         <ReturnForm m={m} onDone={() => setReturning(false)} />
+      ) : editing ? (
+        <MachineEdit m={m} onDone={() => setEditing(false)} />
       ) : (
         <div className="mx-5 mt-5 flex flex-wrap gap-2">
           {(m.stage === "checking" || m.stage === "repair") && can(role, "check") && (
@@ -230,6 +247,16 @@ function MachineDetail({ m }: { m: Machine }) {
           {m.stage !== "sold" && m.stage !== "scrap" && (
             <Button variant="outline" onClick={move} disabled={busy}>
               <ArrowLeftRight /> Move to {m.location === "Shop" ? "godown" : "shop"}
+            </Button>
+          )}
+          {m.stage !== "sold" && can(role, "editMachine") && (
+            <Button variant="outline" onClick={() => setEditing(true)}>
+              <PenLine /> Correct details
+            </Button>
+          )}
+          {(m.stage === "ready" || m.stage === "repair" || m.stage === "scrap") && can(role, "check") && (
+            <Button variant="outline" onClick={undo} disabled={busy}>
+              <RotateCcw /> Undo check
             </Button>
           )}
           <Button

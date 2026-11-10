@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, Download, IndianRupee, Printer } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Ban, Download, IndianRupee, MessageCircle, Printer } from "lucide-react";
+import { toast } from "sonner";
+import { Sheet } from "@/components/ui/sheet";
+import { Field, Input } from "@/components/ui/fields";
 import * as XLSX from "xlsx";
 import { useStore } from "@/lib/data/store";
 import { invoiceMoney } from "@/lib/data/selectors";
@@ -37,6 +40,7 @@ export function InvoiceView({ id }: { id: string }) {
   const role = useStore((s) => s.user?.role);
   const sale = useStore((s) => (inv?.kind === "shop" ? s.sales.find((x) => x.id === inv.refId) : undefined));
   const [paying, setPaying] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   const m = useMemo(() => (inv ? invoiceMoney(inv, payments) : null), [inv, payments]);
   const myPayments = payments.filter((p) => p.invoiceId === id);
@@ -74,6 +78,18 @@ export function InvoiceView({ id }: { id: string }) {
               <Download /> Serial list (Excel)
             </Button>
           )}
+          {inv.kind === "shop" && !inv.cancelledAt && inv.buyerPhone && /^\d{10}$/.test(inv.buyerPhone) && (
+            <Button asChild variant="outline">
+              <a href={whatsAppLink(inv, settings.businessName, settings.phone, warrantyUntil)} target="_blank" rel="noreferrer">
+                <MessageCircle /> Send on WhatsApp
+              </a>
+            </Button>
+          )}
+          {inv.kind === "shop" && !inv.cancelledAt && can(role, "fixMistakes") && (
+            <Button variant="outline" className="text-st-scrap" onClick={() => setCancelling(true)}>
+              <Ban /> Cancel this sale
+            </Button>
+          )}
           {m.balance > 0.5 && can(role, "billing") && (
             <Button variant="outline" onClick={() => setPaying(true)}>
               <IndianRupee /> Record payment
@@ -99,6 +115,17 @@ export function InvoiceView({ id }: { id: string }) {
       )}
 
       <RecordPayment invoice={paying ? inv : null} onClose={() => setPaying(false)} />
+      <CancelSale inv={cancelling ? inv : null} onClose={() => setCancelling(false)} />
+
+      {inv.cancelledAt && (
+        <div className="mx-auto mb-4 flex max-w-[860px] items-start gap-3 rounded-2xl border-2 border-st-scrap bg-st-scrap-bg p-4 text-sm text-st-scrap">
+          <Ban className="mt-0.5 size-5 shrink-0" />
+          <p>
+            <b>This bill is cancelled.</b> Credit note <b>{inv.creditNote}</b> on {longDate(inv.cancelledAt)}. Reason: {inv.cancelReason}. The machine went
+            back to ready stock and {rupees(inv.total)} is to be returned to the customer.
+          </p>
+        </div>
+      )}
 
       {/* The invoice — A4 paper look on screen, clean on print */}
       <article className="print-invoice mx-auto max-w-[860px] rounded-2xl border border-line bg-white p-6 text-[13px] leading-relaxed text-ink shadow-[0_20px_60px_-30px_rgba(15,42,38,.25)] sm:p-10">
@@ -302,4 +329,71 @@ function serialAnnexure(inv: Invoice) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Serials");
   XLSX.writeFile(wb, `${inv.number.replace(/\//g, "-")}-serials.xlsx`);
+}
+
+function whatsAppLink(inv: Invoice, shop: string, shopPhone: string, warrantyUntil: Date) {
+  const items = inv.lines.map((l) => `${l.description.split(",")[0]} (serial ${l.serial})`).join(", ");
+  const text = [
+    `Thank you for buying from ${shop}!`,
+    `Bill ${inv.number} · ${longDate(inv.date)}`,
+    `${items}`,
+    `Amount: ${rupees(inv.total)}`,
+    `Warranty until ${warrantyUntil.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}. Keep this message for warranty claims.`,
+    shopPhone ? `${shop} · ${shopPhone}` : shop,
+  ].join("\n");
+  return `https://wa.me/91${inv.buyerPhone}?text=${encodeURIComponent(text)}`;
+}
+
+function CancelSale({ inv, onClose }: { inv: Invoice | null; onClose: () => void }) {
+  const cancelSale = useStore((s) => s.cancelSale);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const REASONS = ["Entered by mistake", "Wrong price", "Wrong machine", "Wrong customer details", "Customer cancelled before taking it"];
+  return (
+    <Sheet open={!!inv} onOpenChange={(o) => !o && onClose()} title="Cancel this sale" side="center">
+      {inv && (
+        <div className="p-5 pt-14">
+          <p className="font-display text-xl font-bold">Cancel sale {inv.refCode}?</p>
+          <p className="mt-1 text-sm text-ink-2">
+            Bill {inv.number} keeps its number and gets a <b>credit note</b>, as GST rules need. The machine goes back to ready stock so it can be sold
+            again (with the right details). Return {rupees(inv.total)} to the customer.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {REASONS.map((r) => (
+              <button
+                key={r}
+                onClick={() => setReason(r)}
+                className={cn("min-h-10 rounded-full border px-3.5 text-[13.5px] font-semibold", reason === r ? "border-st-scrap bg-st-scrap text-white" : "border-line text-ink-2")}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+          <Field label="Reason" className="mt-3">
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is it being cancelled?" />
+          </Field>
+          <div className="mt-5 grid gap-2">
+            <Button
+              size="lg"
+              variant="danger"
+              disabled={!reason.trim() || busy}
+              onClick={async () => {
+                setBusy(true);
+                const res = await cancelSale(inv.id, reason.trim());
+                setBusy(false);
+                if (!res.ok) return toast.error(res.error);
+                toast.success("Sale cancelled", { description: "Credit note made. The machine is back in ready stock." });
+                onClose();
+              }}
+            >
+              <Ban /> Cancel sale and make credit note
+            </Button>
+            <Button size="lg" variant="ghost" onClick={onClose}>
+              Keep the sale
+            </Button>
+          </div>
+        </div>
+      )}
+    </Sheet>
+  );
 }

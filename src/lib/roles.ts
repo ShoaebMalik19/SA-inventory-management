@@ -14,6 +14,11 @@ export const PERMISSIONS = {
   settings: ["owner"],
   staff: ["owner"],
   reset: ["owner"],
+  editMachine: ["owner", "manager", "technician"],
+  fixMistakes: ["owner", "manager"],
+  history: ["owner", "manager"],
+  reports: ["owner", "manager"],
+  backup: ["owner"],
 } as const satisfies Record<string, readonly Role[]>;
 
 export type Permission = keyof typeof PERMISSIONS;
@@ -52,6 +57,9 @@ export const PAGE_ACCESS: Record<string, readonly Role[]> = {
   "/suppliers": PERMISSIONS.billing,
   "/import": PERMISSIONS.importStock,
   "/settings": PERMISSIONS.settings,
+  "/history": PERMISSIONS.history,
+  "/reports": PERMISSIONS.reports,
+  "/backup": PERMISSIONS.backup,
 };
 
 export const HOME_FOR: Record<Role, string> = {

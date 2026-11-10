@@ -20,6 +20,8 @@ import {
   HandCoins,
   TrendingDown,
   FileSpreadsheet,
+  Eraser,
+  DatabaseBackup,
 } from "lucide-react";
 import { useStore } from "@/lib/data/store";
 import {
@@ -35,9 +37,10 @@ import {
 } from "@/lib/data/selectors";
 import { STAGES, type Activity, type Stage } from "@/lib/data/types";
 import { CountUp } from "@/components/count-up";
+import { ACTIVITY_ICON } from "@/components/activity-icon";
 import { STAGE_STYLE } from "@/components/stage";
 import { Button } from "@/components/ui/button";
-import { count, rupees, rupeesShort, timeAgo } from "@/lib/format";
+import { count, hoursSince, rupees, rupeesShort, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const RAIL: Stage[] = ["checking", "repair", "ready", "booked"];
@@ -47,20 +50,6 @@ function greeting() {
   return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
 }
 
-const ACTIVITY_ICON: Record<Activity["kind"], typeof Truck> = {
-  batch: PackagePlus,
-  check: ClipboardCheck,
-  order: Truck,
-  dispatch: Truck,
-  sale: Store,
-  repair: Wrench,
-  return: Undo2,
-  move: ArrowLeftRight,
-  staff: Users,
-  payment: IndianRupee,
-  settings: Settings,
-  supplier: HandCoins,
-};
 
 export default function HomePage() {
   const machines = useStore((s) => s.machines);
@@ -119,11 +108,13 @@ export default function HomePage() {
           <ArrowUpRight className="size-5 shrink-0 text-brand" />
         </Link>
       ) : null}
+      <WeakPins />
       {/* Hero: the one number the owner cares about */}
       <section className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-[15px] font-medium text-ink-2">
             {greeting()}. Here is your stock today.
+            <BackupLine />
           </p>
           <h1 className="font-display mt-2 text-[44px] font-bold leading-[0.98] sm:text-[64px]">
             <span className="text-brand">
@@ -155,7 +146,7 @@ export default function HomePage() {
       <section className="mt-9 rounded-[var(--radius-panel)] border border-line bg-surface p-5 sm:p-6">
         <div className="flex items-baseline justify-between">
           <h2 className="font-display text-lg font-bold">Where your stock is</h2>
-          <Link href="/machines" className="text-sm font-semibold text-brand hover:underline">
+          <Link href="/machines" className="-my-3 py-3 text-sm font-semibold text-brand hover:underline">
             See all machines
           </Link>
         </div>
@@ -285,7 +276,7 @@ export default function HomePage() {
         <section className="rounded-[var(--radius-panel)] border border-line bg-surface p-5 sm:p-6">
           <div className="flex items-baseline justify-between">
             <h2 className="font-display text-lg font-bold">Most ready stock, by spec</h2>
-            <Link href="/stock" className="text-sm font-semibold text-brand hover:underline">
+            <Link href="/stock" className="-my-3 py-3 text-sm font-semibold text-brand hover:underline">
               Ready stock
             </Link>
           </div>
@@ -376,5 +367,35 @@ function Attention({
         <ArrowUpRight className="size-4 shrink-0 text-ink-3 transition group-hover:text-brand" />
       </Link>
     </li>
+  );
+}
+
+function BackupLine() {
+  const last = useStore((s) => s.lastBackup);
+  const role = useStore((s) => s.user?.role);
+  if (role !== "owner") return null;
+  const old = !last || hoursSince(last) > 30;
+  return (
+    <Link href="/backup" className={cn("ml-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12.5px] font-semibold", old ? "bg-st-checking-bg text-st-checking" : "bg-st-ready-bg text-st-ready")}>
+      {last ? `Backed up ${timeAgo(last)}` : "No backup yet"}
+    </Link>
+  );
+}
+
+function WeakPins() {
+  const weak = useStore((s) => s.weakPins);
+  const live = useStore((s) => s.dataMode === "live");
+  if (!weak?.length) return null;
+  return (
+    <Link
+      href="/staff"
+      className={cn("mb-5 flex items-start gap-3 rounded-2xl border-2 p-4 text-sm", live ? "border-st-scrap bg-st-scrap-bg text-st-scrap" : "border-line bg-surface text-ink-2")}
+    >
+      <AlertTriangle className="mt-0.5 size-5 shrink-0" />
+      <span>
+        <b>{weak.join(", ")}</b> still {weak.length > 1 ? "use" : "uses"} an easy starting PIN (like 1111). Anyone who knows it can sign in.{" "}
+        <span className="font-semibold underline">Change PINs in Staff →</span>
+      </span>
+    </Link>
   );
 }

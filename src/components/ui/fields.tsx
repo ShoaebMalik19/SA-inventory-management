@@ -3,7 +3,7 @@ import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const fieldBase =
-  "w-full rounded-[11px] border border-line bg-surface px-3.5 text-[15px] text-ink placeholder:text-ink-3 outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10";
+  "w-full rounded-[11px] border border-line bg-surface px-3.5 text-[16px] sm:text-[15px] text-ink placeholder:text-ink-3 outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10";
 
 export function Input({ className, ...props }: React.ComponentProps<"input">) {
   return <input className={cn(fieldBase, "h-11", className)} {...props} />;

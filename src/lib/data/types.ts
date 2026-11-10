@@ -26,7 +26,7 @@ export type HistoryEvent = {
   at: string; // ISO
   text: string;
   by?: string; // staff name
-  kind: "added" | "checked" | "repair" | "upgrade" | "moved" | "booked" | "released" | "sold" | "returned";
+  kind: "added" | "checked" | "repair" | "upgrade" | "moved" | "booked" | "released" | "sold" | "returned" | "edited" | "undone";
 };
 
 export type Machine = {
@@ -115,8 +115,9 @@ export type Activity = {
   id: string;
   at: string;
   text: string;
-  kind: "batch" | "check" | "order" | "dispatch" | "sale" | "repair" | "return" | "move" | "staff" | "payment" | "settings" | "supplier";
+  kind: "batch" | "check" | "order" | "dispatch" | "sale" | "repair" | "return" | "move" | "staff" | "payment" | "settings" | "supplier" | "fix" | "backup";
   by?: string;
+  detail?: string; // what exactly changed, e.g. "RAM 8 GB → 16 GB"
 };
 
 export type ReturnRecord = {
@@ -204,6 +205,9 @@ export type Invoice = {
   total: number;
   dueDate: string;
   by?: string;
+  cancelledAt?: string; // set when the bill was cancelled by a credit note
+  cancelReason?: string;
+  creditNote?: string; // "CN/26-27/0001"
 };
 
 export type PaymentMode = "Cash" | "UPI" | "Card" | "Bank transfer" | "Cheque";
@@ -245,3 +249,6 @@ export type SupplierPayment = {
 
 /** "sample" while the shop is trying the app; "live" once its real stock is in. */
 export type DataMode = "sample" | "live";
+
+/** One saved copy of everything (without the data itself). */
+export type BackupInfo = { id: string; at: string; kind: "auto" | "manual" | "before-restore"; by?: string; size: number; rows: number };

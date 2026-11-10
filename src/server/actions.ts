@@ -2,7 +2,9 @@
 
 import { getDb } from "./db";
 import { currentUser, endSession, NotAllowed, requireUser, startSession } from "./auth";
-import { forRole, loadSnapshot, type Patch } from "./repo";
+import { activityPage, forRole, loadSnapshot, type Patch } from "./repo";
+import * as fx from "./fixes";
+import * as bk from "./backups";
 import * as svc from "./service";
 import { loadSampleData } from "./seed-db";
 import type { SupplierInput } from "./suppliers";
@@ -25,9 +27,9 @@ async function run<X extends object>(
     const user = await requireUser(permission);
     const db = await getDb();
     const out = await db.tx((q) => fn(q, user));
-    const { machines, batches, orders, sales, returns, activity, staff, settings, buyers, invoices, payments, suppliers, supplierPayments, dataMode, replaceAll, ...extra } = out;
+    const { machines, batches, orders, sales, returns, activity, staff, settings, buyers, invoices, payments, suppliers, supplierPayments, dataMode, replaceAll, removed, ...extra } = out;
     const patch = forRole({ machines, batches, orders, sales, returns, activity, staff, settings, buyers, invoices, payments, suppliers, supplierPayments, dataMode }, user.role);
-    return { ok: true, patch: { ...patch, replaceAll: replaceAll ? forRole(replaceAll, user.role) : undefined }, ...(extra as X) };
+    return { ok: true, patch: { ...patch, removed, replaceAll: replaceAll ? forRole(replaceAll, user.role) : undefined }, ...(extra as X) };
   } catch (e) {
     if (e instanceof svc.UserError || e instanceof NotAllowed) return { ok: false, error: e.message };
     console.error(e);
@@ -175,6 +177,87 @@ export async function importStock(input: { rows: svc.ImportRow[]; alreadyPaid: b
 export async function startLive(input: { confirm: string }) {
   return run("reset", async (q, u) => {
     await svc.startLive(q, u, input);
+    return { replaceAll: await loadSnapshot(q) };
+  });
+}
+
+/* ---- fixing mistakes ---- */
+
+export async function editMachine(input: fx.MachineEdit) {
+  return run("editMachine", (q, u) => fx.editMachine(q, u, input));
+}
+
+export async function undoCheck(id: string) {
+  return run("check", (q, u) => fx.undoCheck(q, u, { id }));
+}
+
+export async function cancelSale(input: { invoiceId: string; reason: string }) {
+  return run("fixMistakes", (q, u) => fx.cancelSale(q, u, input));
+}
+
+export async function removeBatch(input: { batchId: string; reason: string }) {
+  return run("fixMistakes", (q, u) => fx.removeBatch(q, u, input));
+}
+
+/* ---- history ---- */
+
+export async function loadHistory(f: { before?: string; by?: string; kind?: string; search?: string }) {
+  try {
+    await requireUser("history");
+    const db = await getDb();
+    return { ok: true as const, items: await activityPage(db, f) };
+  } catch (e) {
+    if (e instanceof NotAllowed) return { ok: false as const, error: e.message };
+    console.error(e);
+    return { ok: false as const, error: "Couldn't load the history. Try again." };
+  }
+}
+
+/* ---- backups ---- */
+
+export async function listBackups() {
+  try {
+    await requireUser("backup");
+    const db = await getDb();
+    return { ok: true as const, items: await bk.listBackups(db) };
+  } catch (e) {
+    if (e instanceof NotAllowed) return { ok: false as const, error: e.message };
+    console.error(e);
+    return { ok: false as const, error: "Couldn't load the backups. Try again." };
+  }
+}
+
+export async function backupNow() {
+  try {
+    const u = await requireUser("backup");
+    const db = await getDb();
+    const info = await db.tx(async (q) => {
+      const i = await bk.makeBackup(q, "manual", u.name);
+      await svc.activity(q, "Made a backup of everything", "backup", u, `${i.rows.toLocaleString("en-IN")} records`);
+      return i;
+    });
+    return { ok: true as const, info };
+  } catch (e) {
+    if (e instanceof NotAllowed) return { ok: false as const, error: e.message };
+    console.error(e);
+    return { ok: false as const, error: "The backup didn't finish. Try again." };
+  }
+}
+
+export async function restoreBackup(input: { id: string; confirm: string }) {
+  return run("backup", async (q, u) => {
+    if (input.confirm.trim().toUpperCase() !== "RESTORE") throw new svc.UserError("Type RESTORE to confirm.");
+    const saved = await bk.backupBytes(q, input.id);
+    if (!saved) throw new svc.UserError("This backup doesn't exist any more.");
+    let file;
+    try {
+      file = bk.readBackupFile(saved.data);
+    } catch (e) {
+      throw new svc.UserError((e as Error).message);
+    }
+    await bk.makeBackup(q, "before-restore", u.name);
+    await bk.restoreAll(q, file);
+    await svc.activity(q, `Restored the backup from ${new Date(saved.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}`, "backup", u, "A copy of what was there just before is kept as a 'before restore' backup.");
     return { replaceAll: await loadSnapshot(q) };
   });
 }

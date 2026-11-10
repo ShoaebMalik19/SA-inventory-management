@@ -27,6 +27,7 @@ import * as api from "@/server/actions";
 import type { Patch } from "@/server/repo";
 import type { BuyerInput, CheckInput, ImportRow, NewMachine } from "@/server/service";
 import type { SupplierInput } from "@/server/suppliers";
+import type { MachineEdit } from "@/server/fixes";
 
 /**
  * Browser-side cache of what the server sent. Screens read from here.
@@ -56,6 +57,8 @@ type State = {
   suppliers: Supplier[];
   supplierPayments: SupplierPayment[];
   dataMode: DataMode;
+  lastBackup?: string;
+  weakPins?: string[];
   lastSync: number;
 };
 
@@ -100,6 +103,11 @@ type Actions = {
   recordReturn: (machineId: string, reason: string, refund: number) => Promise<{ ok: true; ret: ReturnRecord } | Fail>;
   saveStaff: (s: { id?: string; name: string; role: Role; pin?: string; active: boolean }) => Promise<{ ok: true } | Fail>;
   resetDemo: () => Promise<{ ok: true } | Fail>;
+  editMachine: (e: MachineEdit) => Promise<{ ok: true } | Fail>;
+  undoCheck: (id: string) => Promise<{ ok: true } | Fail>;
+  cancelSale: (invoiceId: string, reason: string) => Promise<{ ok: true } | Fail>;
+  removeBatch: (batchId: string, reason: string) => Promise<{ ok: true } | Fail>;
+  restoreBackup: (id: string, confirm: string) => Promise<{ ok: true } | Fail>;
 };
 
 const EMPTY = {
@@ -171,6 +179,16 @@ export const useStore = create<State & Actions>()((set, get) => {
 
     apply: (p) => {
       if (p.replaceAll) return set({ ...EMPTY, ...p.replaceAll, lastSync: Date.now() });
+      if (p.removed) {
+        const r = p.removed;
+        const drop = <T extends { id: string }>(list: T[], ids?: string[]) => (ids?.length ? list.filter((x) => !ids.includes(x.id)) : list);
+        set((s) => ({
+          sales: drop(s.sales, r.sales),
+          machines: drop(s.machines, r.machines),
+          batches: drop(s.batches, r.batches),
+          supplierPayments: drop(s.supplierPayments, r.supplierPayments),
+        }));
+      }
       set((s) => ({
         machines: merge(s.machines, p.machines, true),
         batches: merge(s.batches, p.batches),
@@ -222,5 +240,10 @@ export const useStore = create<State & Actions>()((set, get) => {
     saveSupplier: (s) => call(() => api.saveSupplier(s)),
     importStock: (i) => call(() => api.importStock(i)),
     startLive: (confirm) => call(() => api.startLive({ confirm })),
+    editMachine: (e) => call(() => api.editMachine(e)),
+    undoCheck: (id) => call(() => api.undoCheck(id)),
+    cancelSale: (invoiceId, reason) => call(() => api.cancelSale({ invoiceId, reason })),
+    removeBatch: (batchId, reason) => call(() => api.removeBatch({ batchId, reason })),
+    restoreBackup: (id, confirm) => call(() => api.restoreBackup({ id, confirm })),
   };
 });

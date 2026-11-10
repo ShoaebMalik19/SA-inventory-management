@@ -23,6 +23,9 @@ import {
   Undo2,
   Users,
   WifiOff,
+  BarChart3,
+  History,
+  DatabaseBackup,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/lib/data/store";
@@ -44,11 +47,22 @@ export const NAV = [
   { href: "/invoices", label: "Invoices", short: "Bills", icon: FileText },
   { href: "/money", label: "Money to collect", short: "Money", icon: IndianRupee, dues: true },
   { href: "/suppliers", label: "Suppliers", short: "Suppliers", icon: HandCoins },
+  { href: "/reports", label: "Reports", short: "Reports", icon: BarChart3 },
   { href: "/returns", label: "Returns & warranty", short: "Returns", icon: Undo2 },
   { href: "/batches", label: "Batches", short: "Batches", icon: Layers },
+  { href: "/history", label: "History", short: "History", icon: History },
   { href: "/staff", label: "Staff", short: "Staff", icon: Users },
+  { href: "/backup", label: "Backups", short: "Backups", icon: DatabaseBackup },
   { href: "/settings", label: "Settings", short: "Settings", icon: Settings },
 ];
+
+/** The four tabs at the bottom of a phone, picked for each job. Everything else is under More. */
+const PHONE_TABS: Record<string, string[]> = {
+  owner: ["/", "/stock", "/money", "/reports"],
+  manager: ["/", "/stock", "/check", "/orders"],
+  technician: ["/check", "/add", "/stock", "/machines"],
+  counter: ["/sale", "/stock", "/invoices", "/returns"],
+};
 
 function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -181,7 +195,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (!user) return <Splash text="Opening your stock…" />;
 
   const nav = NAV.filter((n) => canOpen(user.role, n.href));
-  const mobile = nav.slice(0, 4);
+  const mobile = (PHONE_TABS[user.role] ?? [])
+    .map((h) => nav.find((n) => n.href === h))
+    .filter((n): n is (typeof nav)[number] => !!n);
 
   return (
     <div className="min-h-dvh lg:pl-[264px]">
@@ -216,7 +232,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-line-soft bg-mist/90 px-4 py-3 backdrop-blur lg:hidden">
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-line-soft bg-mist/90 px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur lg:hidden">
         <Logo />
       </header>
 

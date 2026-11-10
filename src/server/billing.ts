@@ -109,6 +109,9 @@ export function toInvoice(r: Row): Invoice {
     total: Number(r.total),
     dueDate: iso(r.due_date),
     by: (r.by_name as string) ?? undefined,
+    cancelledAt: r.cancelled_at ? iso(r.cancelled_at) : undefined,
+    cancelReason: (r.cancel_reason as string) ?? undefined,
+    creditNote: (r.credit_note as string) ?? undefined,
   };
 }
 
